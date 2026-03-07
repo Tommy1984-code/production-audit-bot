@@ -402,7 +402,6 @@ def save_to_database(data, downtime, rejects, vos_info=None, shift_override: int
     cur = conn.cursor()
     shift = shift_override if shift_override is not None else data["shift"]
 
-    # Use provided available_time or fall back to the default for this shift
     SHIFT_DEFAULT_MINUTES = {1: 300, 2: 420, 3: 600}
     available_time = data.get("available_time")
     if available_time is None:
@@ -431,16 +430,20 @@ def save_to_database(data, downtime, rejects, vos_info=None, shift_override: int
         ))
         production_id = cur.fetchone()[0]
 
-        # Delete old downtime/rejects for this production (for upsert case)
         cur.execute("DELETE FROM downtime_events WHERE production_id = %s", (production_id,))
         cur.execute("DELETE FROM rejects WHERE production_id = %s", (production_id,))
 
         for d in downtime:
             cur.execute("""
                 INSERT INTO downtime_events
-                (production_id, description, duration_min)
-                VALUES (%s, %s, %s)
-            """, (production_id, d["description"], d["duration"]))
+                (production_id, description, duration_min, category)
+                VALUES (%s, %s, %s, %s)
+            """, (
+                production_id,
+                d["description"],
+                d["duration"],
+                d.get("category", "MECHANICAL"),
+            ))
 
         cur.execute("""
             INSERT INTO rejects
@@ -1285,9 +1288,10 @@ async def _do_shift_summary(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     for text in reversed(ai_shift_evidence[shift]):
         try:
             production_data = parse_report(text)
-            downtime = parse_downtime(text)
+            categorized_dt = parse_downtime_categorized(text)
+            downtime = flatten_categorized_downtime(categorized_dt)
             rejects = parse_rejects(text)
-            vos_info = parse_vos(text)  # Parse vos separately
+            vos_info = parse_vos(text)
             break
         except Exception:
             continue
@@ -2518,10 +2522,12 @@ WRITING STYLE:
         production_performance += f"\n  • VOS: {vos_info}"
 
     # ── UPDATED downtime_analysis with categories ─────────────────────────────
+    downtime_hours_display = round(total_downtime / 60, 1)
+    available_hours_display = round(available_time_minutes / 60, 1)
     downtime_analysis = (
         f"\n\n⏱️ DOWNTIME ANALYSIS\n\n"
         f"  • Total Downtime:     {total_downtime} minutes\n"
-        f"  • Downtime Ratio:     {downtime_ratio}% of available time\n"
+        f"  • Downtime Ratio:     {downtime_ratio}%({downtime_hours_display}hr) of {available_hours_display}hr(available time)\n"
         f"  • Dominant Category:  {dominant_cat} ({dt_totals.get(dominant_cat, 0)} min)\n"
         f"  • Mechanical:         {dt_totals.get('MECHANICAL', 0)} min\n"
         f"  • Electrical:         {dt_totals.get('ELECTRICAL', 0)} min\n"
@@ -2720,10 +2726,12 @@ WRITING STYLE:
     if vos_info:
         production_performance += f"\n  • VOS: {vos_info}"
 
+    downtime_hours_display = round(total_downtime / 60, 1)
+    available_hours_display = round(available_time_minutes / 60, 1)
     downtime_analysis = (
         f"\n\n⏱️ DOWNTIME ANALYSIS\n\n"
         f"  • Total Downtime:     {total_downtime} minutes\n"
-        f"  • Downtime Ratio:     {downtime_ratio}% of available time\n"
+        f"  • Downtime Ratio:     {downtime_ratio}%({downtime_hours_display}hr) of {available_hours_display}hr(available time)\n"
         f"  • Dominant Category:  {dominant_cat} ({dt_totals.get(dominant_cat, 0)} min)\n"
         f"  • Mechanical:         {dt_totals.get('MECHANICAL', 0)} min\n"
         f"  • Electrical:         {dt_totals.get('ELECTRICAL', 0)} min\n"
@@ -2995,20 +3003,24 @@ WRITING STYLE:
     per_shift_detail = ""
     for shift in sorted(shift_categorized.keys()):
         scat = shift_categorized[shift]
-        stotals = scat["_totals"]
-        per_shift_detail += f"\n  Shift {shift}:"
+        per_shift_detail += f"\n\n  Shift {shift}:\n"
         per_shift_detail += f"{format_downtime_category_block(scat)}"
+
+    downtime_hours = round(total_downtime / 60, 1)
+    available_hours = round(total_available_minutes / 60, 1)
 
     downtime_analysis = (
         f"\n\n⏱️ DOWNTIME ANALYSIS\n\n"
         f"  • Total Downtime:     {total_downtime} minutes\n"
-        f"  • Downtime Ratio:     {downtime_ratio}% of available time\n"
+        f"  • Downtime Ratio:     {downtime_ratio}%({downtime_hours}hr) of {available_hours}hr(available time)\n"
         f"  • Dominant Category:  {dominant_cat} ({agg_cat_totals.get(dominant_cat, 0)} min)\n"
         f"  • Mechanical (all):   {agg_cat_totals['MECHANICAL']} min\n"
         f"  • Electrical (all):   {agg_cat_totals['ELECTRICAL']} min\n"
         f"  • Utility (all):      {agg_cat_totals['UTILITY']} min"
         f"{per_shift_detail}"
     )
+
+
 
     quality_metrics = (
         f"\n\n✓ QUALITY METRICS\n\n"
@@ -3095,9 +3107,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             shift_closed[pending_shift] = False
 
             # Save to DB (upsert)
+            # Save to DB (upsert)
             try:
                 production_data = parse_report(text)
-                downtime = parse_downtime(text)
+                categorized_dt = parse_downtime_categorized(text)
+                downtime = flatten_categorized_downtime(categorized_dt)
                 rejects = parse_rejects(text)
                 vos_info = parse_vos(text)
                 save_to_database(production_data, downtime, rejects, vos_info=vos_info, shift_override=pending_shift)
@@ -3153,10 +3167,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not shift_closed[target_shift]:
             ai_shift_evidence[target_shift].append(text)
         # Save to database when a valid report is received during AI audit
+        # Save to database when a valid report is received during AI audit
         if target_shift in (1, 2, 3):
             try:
                 production_data = parse_report(text)
-                downtime = parse_downtime(text)
+                categorized_dt = parse_downtime_categorized(text)
+                downtime = flatten_categorized_downtime(categorized_dt)
                 rejects = parse_rejects(text)
                 vos_info = parse_vos(text)
                 save_to_database(production_data, downtime, rejects, vos_info=vos_info, shift_override=target_shift)
@@ -4344,6 +4360,7 @@ async def sanitation_end_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
 def load_shift_evidence_from_db(target_date=None) -> dict:
     """
     Load shift data from DB and reconstruct ai_shift_evidence-compatible text blobs.
+    Reconstructs MECHANICAL / ELECTRICAL / UTILITY headers so parse_downtime_categorized works.
     If target_date is None, auto-detects the most recent date with >= 2 shifts.
     Returns {1: [...], 2: [...], 3: [...], "_resolved_date": date_obj}
     """
@@ -4368,7 +4385,6 @@ def load_shift_evidence_from_db(target_date=None) -> dict:
             target_date = row[0]
             logger.info(f"load_shift_evidence_from_db: auto-detected date = {target_date}")
 
-        # Normalize to Python date object
         from datetime import date as date_type
         if isinstance(target_date, str):
             for fmt in ("%Y-%m-%d", "%d/%m/%y", "%d/%m/%Y"):
@@ -4404,8 +4420,11 @@ def load_shift_evidence_from_db(target_date=None) -> dict:
         for row in rows:
             prod_id, shift, product_type, plan, actual, date_val, vos_info, available_time = row
 
+            # ── Fetch downtime WITH category ──────────────────────────────
             cur.execute("""
-                SELECT description, duration_min FROM downtime_events WHERE production_id = %s
+                SELECT description, duration_min, category
+                FROM downtime_events
+                WHERE production_id = %s
             """, (prod_id,))
             downtime_rows = cur.fetchall()
 
@@ -4417,7 +4436,7 @@ def load_shift_evidence_from_db(target_date=None) -> dict:
             date_str = date_val.strftime("%d/%m/%y") if hasattr(date_val, "strftime") else str(date_val)
             shift_label = {1: "1st", 2: "2nd", 3: "3rd"}.get(shift, "1st")
 
-            # ── Header / production fields — parse_report reads these ──────────
+            # ── Header / production fields ────────────────────────────────
             lines = [
                 f"Date {date_str}",
                 f"Shift {shift_label}",
@@ -4432,12 +4451,27 @@ def load_shift_evidence_from_db(target_date=None) -> dict:
             if vos_info:
                 lines.append(f"VOS = {vos_info}")
 
-            # ── Downtime events — clearly labelled with 'min' unit ────────────
-            # parse_downtime only picks lines with explicit 'min' unit now
-            for desc, dur in downtime_rows:
-                lines.append(f"{desc} {dur} min")
+            # ── Reconstruct downtime WITH category headers ────────────────
+            # Group downtime events by category
+            cat_events = {"MECHANICAL": [], "ELECTRICAL": [], "UTILITY": []}
+            for desc, dur, cat in downtime_rows:
+                # Normalize category — fallback to MECHANICAL if NULL or unknown
+                cat_upper = (cat or "MECHANICAL").upper().strip()
+                if cat_upper not in cat_events:
+                    cat_upper = "MECHANICAL"
+                cat_events[cat_upper].append((desc, dur))
 
-            # ── Rejects — use '=' format so parse_downtime skips them ─────────
+            # Write each category header + its events (or "None")
+            for cat in ("MECHANICAL", "ELECTRICAL", "UTILITY"):
+                lines.append(cat)
+                events = cat_events[cat]
+                if events:
+                    for desc, dur in events:
+                        lines.append(f"• {desc} {dur} min")
+                else:
+                    lines.append("• None")
+
+            # ── Rejects ───────────────────────────────────────────────────
             if rej_row:
                 preform, bottle, cap, label, shrink = rej_row
                 lines.append(f"Preform = {preform or 0}")
@@ -4463,7 +4497,6 @@ def load_shift_evidence_from_db(target_date=None) -> dict:
     finally:
         if conn:
             conn.close()
-
 
 async def all_shift_summary_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
