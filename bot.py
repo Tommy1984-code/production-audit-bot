@@ -247,10 +247,11 @@ VALIDATION_ACCEPT_KEYWORDS = [
     "explanation accepted", "justified",
 ]
 
-VALIDATION_STATE_PENDING = "pending"        # Questions asked, waiting for answer
-VALIDATION_STATE_APPROVED = "approved"      # Operator's answer was convincing
-VALIDATION_STATE_REJECTED = "rejected"      # Operator failed to justify — unaccounted loss
-VALIDATION_STATE_FOLLOWUP = "followup"      # AI asking follow-up questions
+VALIDATION_STATE_PENDING = "pending"  # Questions asked, waiting for answer
+VALIDATION_STATE_APPROVED = "approved"  # Operator's answer was convincing
+VALIDATION_STATE_REJECTED = "rejected"  # Operator failed to justify — unaccounted loss
+VALIDATION_STATE_FOLLOWUP = "followup"  # AI asking follow-up questions
+
 
 def format_date_time_12h(dt: datetime) -> str:
     """Format as dd/mm/yyyy, h:mm AM/PM (12-hour). Converts to Ethiopia if timezone-aware."""
@@ -508,6 +509,7 @@ def save_to_database(data, downtime, rejects, vos_info=None, shift_override: int
         cur.close()
         conn.close()
 
+
 def _ensure_hourly_production_table():
     """Create hourly_production + related tables if they don't exist.
     Also migrates old schemas (drops stale NOT NULL columns the code doesn't use)."""
@@ -720,7 +722,7 @@ def parse_report(text: str):
 
     # Parse Available Time (machine active time in minutes)
     # Look for patterns like "available time = 420" or "available = 420 min" or "avail = 420"
-    available_time_match = re.search(r"available(?:\s+time)?\s*=\s*(\d+)", t)
+    available_time_match = re.search(r"available(?:\s+time)?\s*=?\s*(\d+)", t)
     available_time = None
     if available_time_match:
         available_time = int(available_time_match.group(1))
@@ -1562,6 +1564,7 @@ async def shift_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def shift_summary_1_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _do_shift_summary(update, context, 1)
 
+
 async def shift_summary_from_hourly_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /shift_summary_hourly 1 [date]
@@ -1589,7 +1592,7 @@ async def shift_summary_from_hourly_cmd(update: Update, context: ContextTypes.DE
     # Parse optional date - if no date provided, find most recent data
     target_date = None
     date_label = "most recent"
-    
+
     if len(context.args) >= 2:
         raw = context.args[1].strip()
         for fmt in ("%d/%m/%y", "%d/%m/%Y", "%Y-%m-%d"):
@@ -1616,17 +1619,17 @@ async def shift_summary_from_hourly_cmd(update: Update, context: ContextTypes.DE
             """, (shift,))
             result = cur.fetchone()
             cur.close()
-            
+
             if not result:
                 await update.message.reply_text(
                     f"⚠️ No hourly data found for Shift {shift} in the database.\n"
                     "Submit hourly reports first using /hourly_summary_ai."
                 )
                 return
-            
+
             target_date = result[0]
             date_label = target_date.strftime("%d/%m/%Y")
-            
+
         except Exception as e:
             logger.error(f"Database error finding recent date: {e}")
             await update.message.reply_text(f"❌ Database error: {e}")
@@ -1708,17 +1711,17 @@ async def _generate_shift_summary_from_recent_hourly(update: Update, context: Co
         """, (shift,))
         result = cur.fetchone()
         cur.close()
-        
+
         if not result:
             await update.message.reply_text(
                 f"⚠️ No hourly data found for Shift {shift} in the database.\n"
                 "Submit hourly reports first using /hourly_summary_ai."
             )
             return
-        
+
         recent_date, hour_count = result
         date_label = recent_date.strftime("%d/%m/%Y")
-        
+
         # Load aggregated hourly data for this shift and date
         text_blob = load_shift_evidence_from_hourly_db(shift, recent_date)
         if not text_blob:
@@ -1760,7 +1763,7 @@ async def _generate_shift_summary_from_recent_hourly(update: Update, context: Co
             await update.message.reply_text(f"❌ Error: {e}")
         finally:
             ai_shift_evidence[shift] = original_evidence
-            
+
     except Exception as e:
         logger.error(f"Database error: {e}")
         await update.message.reply_text(f"❌ Database error: {e}")
@@ -1850,6 +1853,7 @@ async def all_shift_summary_from_hourly_cmd(update: Update, context: ContextType
     finally:
         for s in (1, 2, 3):
             ai_shift_evidence[s] = original_evidence[s]
+
 
 async def shift_summary_2_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _do_shift_summary(update, context, 2)
@@ -2745,8 +2749,9 @@ async def generate_multi_shift_summary_and_post(
 DOWNTIME_CATEGORIES = {
     "MECHANICAL": ["mechanical", "machine", "technical"],
     "ELECTRICAL": ["electrical", "electric"],
-    "UTILITY":    ["utility", "utilities"],
+    "UTILITY": ["utility", "utilities"],
 }
+
 
 def parse_downtime_categorized(text: str) -> dict:
     """
@@ -2761,11 +2766,11 @@ def parse_downtime_categorized(text: str) -> dict:
         UTILITY
         • Low pressure shortage problem (20 min)
     """
-    result  = {"MECHANICAL": [], "ELECTRICAL": [], "UTILITY": []}
+    result = {"MECHANICAL": [], "ELECTRICAL": [], "UTILITY": []}
     current = None  # no default — wait for a real header
 
     for raw_line in text.split('\n'):
-        line  = raw_line.strip()
+        line = raw_line.strip()
         lower = line.lower()
 
         if not line:
@@ -2815,8 +2820,8 @@ def parse_downtime_categorized(text: str) -> dict:
             if len(desc) > 2:
                 result[current].append({
                     "description": desc,
-                    "duration":    duration,
-                    "category":    current,
+                    "duration": duration,
+                    "category": current,
                 })
 
     # ── Compute totals per category ────────────────────────────────────────
@@ -2826,18 +2831,19 @@ def parse_downtime_categorized(text: str) -> dict:
     }
     return result
 
+
 def format_downtime_category_block(categorized: dict) -> str:
     icons = {
         "MECHANICAL": "⚙️",
         "ELECTRICAL": "🔌",
-        "UTILITY":    "🏭",
+        "UTILITY": "🏭",
     }
     lines = []
     for cat in ("MECHANICAL", "ELECTRICAL", "UTILITY"):
-        items  = categorized.get(cat, [])
+        items = categorized.get(cat, [])
         totals = categorized["_totals"]
-        icon   = icons[cat]
-        total  = totals.get(cat, 0)
+        icon = icons[cat]
+        total = totals.get(cat, 0)
 
         lines.append(f"\n\n  {icon} {cat} — {total} min")
         if items:
@@ -2848,15 +2854,16 @@ def format_downtime_category_block(categorized: dict) -> str:
 
     return "\n".join(lines)
 
+
 def build_downtime_analysis_block(categorized: dict, available_time: int) -> str:
     """
     Builds the full DOWNTIME ANALYSIS summary block.
     """
-    totals     = categorized.get("_totals", {})
+    totals = categorized.get("_totals", {})
     mech_total = totals.get("MECHANICAL", 0)
     elec_total = totals.get("ELECTRICAL", 0)
     util_total = totals.get("UTILITY", 0)
-    total_dt   = mech_total + elec_total + util_total
+    total_dt = mech_total + elec_total + util_total
 
     # Downtime ratio
     ratio = (total_dt / available_time * 100) if available_time > 0 else 0.0
@@ -2865,9 +2872,9 @@ def build_downtime_analysis_block(categorized: dict, available_time: int) -> str
     cat_map = {
         "MECHANICAL": mech_total,
         "ELECTRICAL": elec_total,
-        "UTILITY":    util_total,
+        "UTILITY": util_total,
     }
-    dominant_cat   = max(cat_map, key=cat_map.get)
+    dominant_cat = max(cat_map, key=cat_map.get)
     dominant_total = cat_map[dominant_cat]
 
     block = (
@@ -2882,6 +2889,7 @@ def build_downtime_analysis_block(categorized: dict, available_time: int) -> str
     )
     return block
 
+
 def flatten_categorized_downtime(categorized: dict) -> list:
     """
     Flattens the categorized downtime dict into a simple list of event dicts.
@@ -2892,24 +2900,25 @@ def flatten_categorized_downtime(categorized: dict) -> list:
         flat.extend(categorized.get(cat, []))
     return flat
 
+
 async def ai_generate_summary(shift: int):
     evidence = ai_shift_evidence[shift]
     if not evidence:
         return "No evidence found."
 
     production_data = None
-    downtime        = []
-    rejects         = {}
-    vos_info        = None
-    categorized_dt  = {"MECHANICAL": [], "ELECTRICAL": [], "UTILITY": [], "_totals": {}}
+    downtime = []
+    rejects = {}
+    vos_info = None
+    categorized_dt = {"MECHANICAL": [], "ELECTRICAL": [], "UTILITY": [], "_totals": {}}
 
     for text in reversed(evidence):
         try:
             production_data = parse_report(text)
-            categorized_dt  = parse_downtime_categorized(text)   # ← NEW
-            downtime        = flatten_categorized_downtime(categorized_dt)  # ← NEW
-            rejects         = parse_rejects(text)
-            vos_info        = parse_vos(text)
+            categorized_dt = parse_downtime_categorized(text)  # ← NEW
+            downtime = flatten_categorized_downtime(categorized_dt)  # ← NEW
+            rejects = parse_rejects(text)
+            vos_info = parse_vos(text)
             break
         except Exception:
             continue
@@ -2918,37 +2927,43 @@ async def ai_generate_summary(shift: int):
         return "DATA INCOMPLETE – production report missing."
 
     # ── Aggregation (unchanged) ───────────────────────────────────────────────
-    total_downtime         = sum(d["duration"] for d in downtime)
-    actual_output          = production_data["actual"]
-    plan_output            = production_data["plan"]
+    total_downtime = sum(d["duration"] for d in downtime)
+    actual_output = production_data["actual"]
+    plan_output = production_data["plan"]
     available_time_minutes = production_data.get("available_time") or int(
         get_default_production_hours("shift", shift) * 60
     )
-    production_hours       = available_time_minutes / 60
-    dt_totals              = categorized_dt["_totals"]
-    dominant_cat           = max(dt_totals, key=dt_totals.get) if any(dt_totals.values()) else "N/A"
+    production_hours = available_time_minutes / 60
+    dt_totals = categorized_dt["_totals"]
+    dominant_cat = max(dt_totals, key=dt_totals.get) if any(dt_totals.values()) else "N/A"
 
     # ── KPI (unchanged) ──────────────────────────────────────────────────────
-    kpis          = compute_kpis(plan_output, actual_output, total_downtime, production_hours, rejects)
+    kpis = compute_kpis(plan_output, actual_output, total_downtime, production_hours, rejects)
     downtime_ratio = round((total_downtime / available_time_minutes) * 100, 2) if available_time_minutes else 0
 
     # ── Risk (unchanged) ─────────────────────────────────────────────────────
     risk_score = 0
-    if kpis["performance"] < 60:   risk_score += 3
-    elif kpis["performance"] < 75: risk_score += 2
-    if downtime_ratio > 40:        risk_score += 3
-    elif downtime_ratio > 25:      risk_score += 2
+    if kpis["performance"] < 60:
+        risk_score += 3
+    elif kpis["performance"] < 75:
+        risk_score += 2
+    if downtime_ratio > 40:
+        risk_score += 3
+    elif downtime_ratio > 25:
+        risk_score += 2
     total_rejects_count = rejects.get("bottle", 0) + rejects.get("cap", 0) + rejects.get("label", 0)
     if actual_output > 0:
         rr = (total_rejects_count / actual_output) * 100
-        if rr > 5:   risk_score += 2
-        elif rr > 2: risk_score += 1
+        if rr > 5:
+            risk_score += 2
+        elif rr > 2:
+            risk_score += 1
     downtime_text = " ".join(d["description"] for d in downtime).lower()
     if any(w in downtime_text for w in ("misalignment", "wear")):       risk_score += 1
     if any(w in downtime_text for w in ("short circuit", "breaker")):   risk_score += 1
     if any(w in downtime_text for w in ("glue", "adhesive")):           risk_score += 1
-    risk_level   = ("CRITICAL" if risk_score >= 7 else "HIGH" if risk_score >= 5
-                    else "MODERATE" if risk_score >= 3 else "LOW")
+    risk_level = ("CRITICAL" if risk_score >= 7 else "HIGH" if risk_score >= 5
+    else "MODERATE" if risk_score >= 3 else "LOW")
     audit_status = "CLOSED" if shift_closed[shift] else "FOLLOW-UP REQUIRED"
 
     # ── Structured data for AI (UPDATED downtime section) ────────────────────
@@ -2989,6 +3004,7 @@ AUDIT_STATUS: {audit_status}
 
     # ── AI narrative (system prompt UPDATED) ─────────────────────────────────
     loop = asyncio.get_running_loop()
+
     def call_ai():
         return ai_client.chat.completions.create(
             model=AI_MODEL,
@@ -3023,7 +3039,8 @@ WRITING STYLE:
             ],
             temperature=0.2,
         )
-    response          = await loop.run_in_executor(None, call_ai)
+
+    response = await loop.run_in_executor(None, call_ai)
     executive_paragraph = response.choices[0].message.content.strip()
 
     # ── Report sections ───────────────────────────────────────────────────────
@@ -3115,47 +3132,54 @@ Shrink               {kpis['reject_percentages']['shrink']:.1f} %           {rej
     )
     return final_report.strip()
 
+
 async def ai_generate_hourly_summary_from_text(report_text: str):
     try:
         production_data = parse_report(report_text)
     except Exception:
         return "DATA INCOMPLETE – production report missing."
 
-    categorized_dt  = parse_downtime_categorized(report_text)   # ← NEW
-    downtime        = flatten_categorized_downtime(categorized_dt)  # ← NEW
-    rejects         = parse_rejects(report_text)
-    vos_info        = parse_vos(report_text)
-    dt_totals       = categorized_dt["_totals"]
-    dominant_cat    = max(dt_totals, key=dt_totals.get) if any(dt_totals.values()) else "N/A"
+    categorized_dt = parse_downtime_categorized(report_text)  # ← NEW
+    downtime = flatten_categorized_downtime(categorized_dt)  # ← NEW
+    rejects = parse_rejects(report_text)
+    vos_info = parse_vos(report_text)
+    dt_totals = categorized_dt["_totals"]
+    dominant_cat = max(dt_totals, key=dt_totals.get) if any(dt_totals.values()) else "N/A"
 
-    total_downtime         = sum(d["duration"] for d in downtime)
-    actual_output          = production_data["actual"]
-    plan_output            = production_data["plan"]
+    total_downtime = sum(d["duration"] for d in downtime)
+    actual_output = production_data["actual"]
+    plan_output = production_data["plan"]
     available_time_minutes = production_data.get("available_time") or int(
         get_default_production_hours("hourly") * 60
     )
     production_hours = available_time_minutes / 60
 
-    kpis           = compute_kpis(plan_output, actual_output, total_downtime, production_hours, rejects)
-    downtime_ratio  = round((total_downtime / available_time_minutes) * 100, 2) if available_time_minutes else 0
+    kpis = compute_kpis(plan_output, actual_output, total_downtime, production_hours, rejects)
+    downtime_ratio = round((total_downtime / available_time_minutes) * 100, 2) if available_time_minutes else 0
 
     # ── Risk (unchanged logic) ────────────────────────────────────────────────
     risk_score = 0
-    if kpis["performance"] < 60:   risk_score += 3
-    elif kpis["performance"] < 75: risk_score += 2
-    if downtime_ratio > 40:        risk_score += 3
-    elif downtime_ratio > 25:      risk_score += 2
+    if kpis["performance"] < 60:
+        risk_score += 3
+    elif kpis["performance"] < 75:
+        risk_score += 2
+    if downtime_ratio > 40:
+        risk_score += 3
+    elif downtime_ratio > 25:
+        risk_score += 2
     total_rejects_count = rejects.get("bottle", 0) + rejects.get("cap", 0) + rejects.get("label", 0)
     if actual_output > 0:
         rr = (total_rejects_count / actual_output) * 100
-        if rr > 5:   risk_score += 2
-        elif rr > 2: risk_score += 1
+        if rr > 5:
+            risk_score += 2
+        elif rr > 2:
+            risk_score += 1
     downtime_text = " ".join(d["description"] for d in downtime).lower()
     if any(w in downtime_text for w in ("misalignment", "wear")):     risk_score += 1
     if any(w in downtime_text for w in ("short circuit", "breaker")): risk_score += 1
     if any(w in downtime_text for w in ("glue", "adhesive")):         risk_score += 1
-    risk_level   = ("CRITICAL" if risk_score >= 7 else "HIGH" if risk_score >= 5
-                    else "MODERATE" if risk_score >= 3 else "LOW")
+    risk_level = ("CRITICAL" if risk_score >= 7 else "HIGH" if risk_score >= 5
+    else "MODERATE" if risk_score >= 3 else "LOW")
     audit_status = "FOLLOW-UP REQUIRED"
 
     # ── Structured data (UPDATED) ─────────────────────────────────────────────
@@ -3195,6 +3219,7 @@ AUDIT_STATUS: {audit_status}
 """
 
     loop = asyncio.get_running_loop()
+
     def call_ai():
         return ai_client.chat.completions.create(
             model=AI_MODEL,
@@ -3228,7 +3253,8 @@ WRITING STYLE:
             ],
             temperature=0.2,
         )
-    response            = await loop.run_in_executor(None, call_ai)
+
+    response = await loop.run_in_executor(None, call_ai)
     executive_paragraph = response.choices[0].message.content.strip()
 
     # ── Report sections ───────────────────────────────────────────────────────
@@ -3319,6 +3345,7 @@ Shrink               {kpis['reject_percentages']['shrink']:.1f} %           {rej
     )
     return final_report.strip()
 
+
 async def ai_generate_multi_shift_summary(included_shifts: list[int]):
     if not included_shifts:
         return None
@@ -3342,36 +3369,36 @@ async def ai_generate_multi_shift_summary(included_shifts: list[int]):
 
     logger.info(f"ai_generate_multi_shift_summary: target_date={target_date}, shifts={included_shifts}")
 
-    total_plan            = 0
-    total_actual          = 0
-    total_downtime        = 0
+    total_plan = 0
+    total_actual = 0
+    total_downtime = 0
     total_production_hours = 0
-    total_rejects         = {"preform": 0, "bottle": 0, "cap": 0, "label": 0, "shrink": 0}
+    total_rejects = {"preform": 0, "bottle": 0, "cap": 0, "label": 0, "shrink": 0}
     # ── Aggregated category totals across all shifts ──────────────────────────
-    agg_cat_totals        = {"MECHANICAL": 0, "ELECTRICAL": 0, "UTILITY": 0}
+    agg_cat_totals = {"MECHANICAL": 0, "ELECTRICAL": 0, "UTILITY": 0}
     # Per-shift categorized downtime for display
-    shift_categorized     = {}
-    product_types         = []
-    all_vos_info          = []
-    shifts_with_data      = []
+    shift_categorized = {}
+    product_types = []
+    all_vos_info = []
+    shifts_with_data = []
 
     for shift in (1, 2, 3):
         if not ai_shift_evidence[shift]:
             continue
 
         shift_production_data = None
-        shift_categorized_dt  = None
-        shift_rejects         = {}
-        shift_vos_info        = None
+        shift_categorized_dt = None
+        shift_rejects = {}
+        shift_vos_info = None
 
         for text in reversed(ai_shift_evidence[shift]):
             try:
                 production_data = parse_report(text)
                 if production_data and str(production_data.get("date")) == target_date:
                     shift_production_data = production_data
-                    shift_categorized_dt  = parse_downtime_categorized(text)  # ← NEW
-                    shift_rejects         = parse_rejects(text)
-                    shift_vos_info        = parse_vos(text)
+                    shift_categorized_dt = parse_downtime_categorized(text)  # ← NEW
+                    shift_rejects = parse_rejects(text)
+                    shift_vos_info = parse_vos(text)
                     break
             except:
                 continue
@@ -3380,12 +3407,12 @@ async def ai_generate_multi_shift_summary(included_shifts: list[int]):
             continue
 
         shifts_with_data.append(shift)
-        shift_flat_dt  = flatten_categorized_downtime(shift_categorized_dt)
+        shift_flat_dt = flatten_categorized_downtime(shift_categorized_dt)
         shift_dt_total = sum(d["duration"] for d in shift_flat_dt)
         shift_categorized[shift] = shift_categorized_dt
 
-        total_plan    += shift_production_data["plan"]
-        total_actual  += shift_production_data["actual"]
+        total_plan += shift_production_data["plan"]
+        total_actual += shift_production_data["actual"]
         total_downtime += shift_dt_total
 
         # Accumulate category totals
@@ -3411,24 +3438,30 @@ async def ai_generate_multi_shift_summary(included_shifts: list[int]):
     if total_plan == 0:
         return None
 
-    dominant_cat           = max(agg_cat_totals, key=agg_cat_totals.get) if any(agg_cat_totals.values()) else "N/A"
-    kpis                   = compute_kpis(total_plan, total_actual, total_downtime, total_production_hours, total_rejects)
+    dominant_cat = max(agg_cat_totals, key=agg_cat_totals.get) if any(agg_cat_totals.values()) else "N/A"
+    kpis = compute_kpis(total_plan, total_actual, total_downtime, total_production_hours, total_rejects)
     total_available_minutes = total_production_hours * 60
-    downtime_ratio          = round((total_downtime / total_available_minutes) * 100, 2) if total_available_minutes else 0
+    downtime_ratio = round((total_downtime / total_available_minutes) * 100, 2) if total_available_minutes else 0
 
     # Risk (unchanged logic)
     risk_score = 0
-    if kpis["performance"] < 60:   risk_score += 3
-    elif kpis["performance"] < 75: risk_score += 2
-    if downtime_ratio > 40:        risk_score += 3
-    elif downtime_ratio > 25:      risk_score += 2
+    if kpis["performance"] < 60:
+        risk_score += 3
+    elif kpis["performance"] < 75:
+        risk_score += 2
+    if downtime_ratio > 40:
+        risk_score += 3
+    elif downtime_ratio > 25:
+        risk_score += 2
     total_reject_count = total_rejects.get("bottle", 0) + total_rejects.get("cap", 0) + total_rejects.get("label", 0)
     if total_actual > 0:
         rr = (total_reject_count / total_actual) * 100
-        if rr > 5:   risk_score += 2
-        elif rr > 2: risk_score += 1
-    risk_level   = ("CRITICAL" if risk_score >= 7 else "HIGH" if risk_score >= 5
-                    else "MODERATE" if risk_score >= 3 else "LOW")
+        if rr > 5:
+            risk_score += 2
+        elif rr > 2:
+            risk_score += 1
+    risk_level = ("CRITICAL" if risk_score >= 7 else "HIGH" if risk_score >= 5
+    else "MODERATE" if risk_score >= 3 else "LOW")
     audit_status = "CLOSED"
     product_type_str = ", ".join(set(product_types)) if product_types else "Mixed"
 
@@ -3465,6 +3498,7 @@ AUDIT_STATUS: {audit_status}
 """
 
     loop = asyncio.get_running_loop()
+
     def call_ai():
         return ai_client.chat.completions.create(
             model=AI_MODEL,
@@ -3499,7 +3533,8 @@ WRITING STYLE:
             ],
             temperature=0.2,
         )
-    response            = await loop.run_in_executor(None, call_ai)
+
+    response = await loop.run_in_executor(None, call_ai)
     executive_paragraph = response.choices[0].message.content.strip()
 
     # ── Production performance ────────────────────────────────────────────────
@@ -3536,8 +3571,6 @@ WRITING STYLE:
         f"  • Utility (all):      {agg_cat_totals['UTILITY']} min"
         f"{per_shift_detail}"
     )
-
-
 
     quality_metrics = (
         f"\n\n✓ QUALITY METRICS\n\n"
@@ -3602,14 +3635,15 @@ Shrink               {kpis['reject_percentages']['shrink']:.1f} %           {rou
     )
     return final_report.strip()
 
+
 # ---------------- PRODUCTION VALIDATION ENGINE ----------------
 
 def calculate_expected_production(
-    plan: int,
-    shift: int,
-    available_time_minutes: int = None,
-    downtime_minutes: int = 0,
-    report_type: str = "hourly",
+        plan: int,
+        shift: int,
+        available_time_minutes: int = None,
+        downtime_minutes: int = 0,
+        report_type: str = "hourly",
 ) -> dict:
     """
     Calculate what production SHOULD have been given the reported downtime.
@@ -3652,20 +3686,17 @@ def validate_production(
     shift: int,
     available_time_minutes: int = None,
     report_type: str = "hourly",
-    vos_minutes: int = 0,
 ) -> dict:
     """
     Validate whether actual production matches what's mathematically possible.
-    VOS is passed in separately so it's visible in the result, but it is added
-    to downtime_minutes before any math — same treatment as mechanical/electrical.
+    available_time_minutes is already reduced by VOS before being passed in.
+    downtime_minutes is internal downtime only (mechanical, electrical, etc.).
     """
-    total_downtime = downtime_minutes + vos_minutes
-
     expected = calculate_expected_production(
         plan=plan,
         shift=shift,
         available_time_minutes=available_time_minutes,
-        downtime_minutes=total_downtime,
+        downtime_minutes=downtime_minutes,
         report_type=report_type,
     )
 
@@ -3674,7 +3705,7 @@ def validate_production(
     gap_minutes = 0
     severity = "NONE"
 
-    # ── Check 1: Actual lower than expected after downtime ──────────────
+    # ── Check 1: Production gap ──────────────────────────────────────────
     if actual < expected["minimum_acceptable"]:
         gap = expected["expected_output"] - actual
         gap_minutes = round(gap / expected["rate_per_minute"]) if expected["rate_per_minute"] > 0 else 0
@@ -3701,20 +3732,18 @@ def validate_production(
             "gap_pct": round(gap_pct, 1),
         })
 
-    # ── Check 2: Downtime suspiciously low for the output gap ───────────
+    # ── Check 2: Downtime suspiciously low ───────────────────────────────
     plan_achievement = (actual / plan * 100) if plan > 0 else 0
-    downtime_ratio = (total_downtime / expected["total_minutes"] * 100) if expected["total_minutes"] > 0 else 0
+    downtime_ratio = (downtime_minutes / expected["total_minutes"] * 100) if expected["total_minutes"] > 0 else 0
 
     if plan_achievement < 70 and downtime_ratio < 10:
         missing_minutes = round((plan - actual) / expected["rate_per_minute"]) if expected["rate_per_minute"] > 0 else 0
-        # BUG FIX #1: missing_minutes - total_downtime can go negative when
-        # total_downtime > missing_minutes. Guard with max(0, ...).
-        unaccounted = max(0, missing_minutes - total_downtime)
+        unaccounted = max(0, missing_minutes - downtime_minutes)
         issues.append({
             "type": "DOWNTIME_UNDERREPORTED",
             "message": (
                 f"Achievement is only {plan_achievement:.1f}% but only "
-                f"{total_downtime} min total downtime reported "
+                f"{downtime_minutes} min downtime reported "
                 f"({downtime_ratio:.1f}% of available time). "
                 f"The production shortfall suggests ~{missing_minutes} min of lost time. "
                 f"Where are the missing ~{unaccounted} minutes?"
@@ -3722,30 +3751,24 @@ def validate_production(
             "missing_minutes": unaccounted,
         })
 
-    # ── Check 3: Downtime exceeds or equals available time ────────────────────────
-    if total_downtime >= expected["total_minutes"]:
-        if total_downtime > expected["total_minutes"]:
+    # ── Check 3: Downtime exceeds or equals available time ───────────────
+    if downtime_minutes >= expected["total_minutes"]:
+        if downtime_minutes > expected["total_minutes"]:
             issue_type = "DOWNTIME_EXCEEDS_AVAILABLE"
             message = (
-                f"Total downtime ({total_downtime} min, incl. {vos_minutes} min VOS) "
-                f"exceeds available time ({expected['total_minutes']} min). "
-                f"Please verify downtime entries."
+                f"Total downtime ({downtime_minutes} min) exceeds available time "
+                f"({expected['total_minutes']} min). Please verify downtime entries."
             )
-        else:  # total_downtime == expected["total_minutes"]
+        else:
             issue_type = "ZERO_PRODUCTION_TIME"
             message = (
-                f"Total downtime ({total_downtime} min, incl. {vos_minutes} min VOS) "
-                f"consumes the entire available time ({expected['total_minutes']} min). "
-                f"There is ZERO time available for production. "
+                f"Total downtime ({downtime_minutes} min) consumes the entire available time "
+                f"({expected['total_minutes']} min). There is ZERO time available for production. "
                 f"{'Any production reported is impossible.' if actual > 0 else 'Zero production is expected.'}"
             )
-        
-        issues.append({
-            "type": issue_type,
-            "message": message,
-        })
+        issues.append({"type": issue_type, "message": message})
 
-    # ── Check 4: Actual exceeds plan significantly ───────────────────────
+    # ── Check 4: Over-production ─────────────────────────────────────────
     if actual > plan * 1.15:
         issues.append({
             "type": "OVER_PRODUCTION",
@@ -3756,39 +3779,37 @@ def validate_production(
             ),
         })
 
-    # ── Check 5: Zero actual with zero downtime ──────────────────────────
-    if actual == 0 and total_downtime == 0:
+    # ── Check 5: Zero output with zero downtime ──────────────────────────
+    if actual == 0 and downtime_minutes == 0:
         issues.append({
             "type": "ZERO_OUTPUT_NO_DOWNTIME",
             "message": "Zero output reported with zero downtime. This requires justification.",
         })
 
-    # ── Check 5b: Unrealistic production in very short time window ───────────
-    if (0 < expected["net_production_minutes"] <= 15 and actual > 0):
-        # For very short production windows (≤15 min), apply stricter validation
-        realistic_max_rate = expected["rate_per_minute"] * 1.5  # Allow 50% above normal rate for short bursts
+    # ── Check 5b: Unrealistic production — very short window (≤15 min) ───
+    if 0 < expected["net_production_minutes"] <= 15 and actual > 0:
+        realistic_max_rate = expected["rate_per_minute"] * 1.5
         actual_rate = actual / expected["net_production_minutes"]
-        
+
         if actual_rate > realistic_max_rate:
             excess_rate = actual_rate - realistic_max_rate
             excess_rate_pct = (excess_rate / realistic_max_rate) * 100
-            
+
             check_severity = "CRITICAL" if excess_rate_pct > 100 else "SIGNIFICANT" if excess_rate_pct > 50 else "MINOR"
             severity_rank = {"NONE": 0, "MINOR": 1, "SIGNIFICANT": 2, "CRITICAL": 3}
             if severity_rank.get(check_severity, 0) > severity_rank.get(severity, 0):
                 severity = check_severity
-            
+
             issues.append({
                 "type": "UNREALISTIC_SHORT_TIME_PRODUCTION",
                 "message": (
                     f"UNREALISTIC PRODUCTION RATE: "
-                    f"With only {expected['net_production_minutes']} min available for production, "
-                    f"you reported {actual:,} packs, which equals {actual_rate:.1f} packs/min. "
-                    f"The planned rate is {expected['rate_per_minute']:.1f} packs/min. "
-                    f"Even allowing for short bursts, the maximum realistic rate is {realistic_max_rate:.1f} packs/min. "
-                    f"Your reported rate exceeds this by {excess_rate_pct:.0f}%. "
-                    f"This level of output in such a short time window is physically implausible. "
-                    f"Please provide evidence of machine speed settings or verify the production time/downtime entries."
+                    f"With only {expected['net_production_minutes']} min available, "
+                    f"you reported {actual:,} packs ({actual_rate:.1f} packs/min). "
+                    f"Plan rate: {expected['rate_per_minute']:.1f}/min. "
+                    f"Max realistic rate: {realistic_max_rate:.1f}/min. "
+                    f"Your rate exceeds this by {excess_rate_pct:.0f}%. "
+                    f"Please verify machine speed settings or production time entries."
                 ),
                 "actual_rate": actual_rate,
                 "realistic_max_rate": realistic_max_rate,
@@ -3796,31 +3817,30 @@ def validate_production(
                 "production_time_minutes": expected["net_production_minutes"],
             })
 
-    # ── Check 5c: Unrealistic production in medium-short time window ─────────
-    elif (15 < expected["net_production_minutes"] <= 30 and actual > 0):
-        # For medium-short production windows (16-30 min), apply moderate validation
-        realistic_max_rate = expected["rate_per_minute"] * 1.3  # Allow 30% above normal rate
+    # ── Check 5c: Unrealistic production — medium window (16–30 min) ─────
+    elif 15 < expected["net_production_minutes"] <= 30 and actual > 0:
+        realistic_max_rate = expected["rate_per_minute"] * 1.3
         actual_rate = actual / expected["net_production_minutes"]
-        
+
         if actual_rate > realistic_max_rate:
             excess_rate = actual_rate - realistic_max_rate
             excess_rate_pct = (excess_rate / realistic_max_rate) * 100
-            
+
             check_severity = "CRITICAL" if excess_rate_pct > 80 else "SIGNIFICANT" if excess_rate_pct > 40 else "MINOR"
             severity_rank = {"NONE": 0, "MINOR": 1, "SIGNIFICANT": 2, "CRITICAL": 3}
             if severity_rank.get(check_severity, 0) > severity_rank.get(severity, 0):
                 severity = check_severity
-            
+
             issues.append({
                 "type": "UNREALISTIC_MEDIUM_TIME_PRODUCTION",
                 "message": (
                     f"QUESTIONABLE PRODUCTION RATE: "
-                    f"With only {expected['net_production_minutes']} min available for production, "
-                    f"you reported {actual:,} packs, which equals {actual_rate:.1f} packs/min. "
-                    f"The planned rate is {expected['rate_per_minute']:.1f} packs/min. "
-                    f"The maximum realistic rate for this time window is {realistic_max_rate:.1f} packs/min. "
-                    f"Your reported rate exceeds this by {excess_rate_pct:.0f}%. "
-                    f"This requires verification of machine performance or production time calculations."
+                    f"With only {expected['net_production_minutes']} min available, "
+                    f"you reported {actual:,} packs ({actual_rate:.1f} packs/min). "
+                    f"Plan rate: {expected['rate_per_minute']:.1f}/min. "
+                    f"Max realistic rate: {realistic_max_rate:.1f}/min. "
+                    f"Your rate exceeds this by {excess_rate_pct:.0f}%. "
+                    f"Verify machine performance or production time calculations."
                 ),
                 "actual_rate": actual_rate,
                 "realistic_max_rate": realistic_max_rate,
@@ -3834,13 +3854,7 @@ def validate_production(
         excess_pct = round((excess / expected["maximum_possible"]) * 100, 1) if expected["maximum_possible"] > 0 else 0
         extra_minutes_needed = round(excess / expected["rate_per_minute"]) if expected["rate_per_minute"] > 0 else 0
 
-        if excess_pct > 50:
-            exag_severity = "CRITICAL"
-        elif excess_pct > 25:
-            exag_severity = "SIGNIFICANT"
-        else:
-            exag_severity = "MINOR"
-
+        exag_severity = "CRITICAL" if excess_pct > 50 else "SIGNIFICANT" if excess_pct > 25 else "MINOR"
         severity_rank = {"NONE": 0, "MINOR": 1, "SIGNIFICANT": 2, "CRITICAL": 3}
         if severity_rank.get(exag_severity, 0) > severity_rank.get(severity, 0):
             severity = exag_severity
@@ -3849,25 +3863,23 @@ def validate_production(
             "type": "EXAGGERATED_OUTPUT",
             "message": (
                 f"EXAGGERATED PRODUCTION DETECTED: "
-                f"With {total_downtime} min total downtime "
-                f"({vos_minutes} min VOS + {downtime_minutes} min internal), "
+                f"With {downtime_minutes} min downtime, "
                 f"only {expected['net_production_minutes']} min of production time remains. "
                 f"At plan rate of {expected['rate_per_minute']:.1f} packs/min, "
                 f"maximum possible output is ~{expected['maximum_possible']:,} packs "
                 f"(including {expected['max_tolerance_pct']*100:.0f}% tolerance). "
-                f"But actual reported is {actual:,} packs — "
-                f"that's {excess:,} packs MORE than physically possible "
+                f"Actual reported: {actual:,} packs — "
+                f"{excess:,} packs MORE than physically possible "
                 f"({excess_pct}% over maximum). "
-                f"This would require an EXTRA {extra_minutes_needed} minutes of production time "
-                f"that does not exist."
+                f"This would require an extra {extra_minutes_needed} min that do not exist."
             ),
             "excess": excess,
             "excess_pct": excess_pct,
             "extra_minutes_needed": extra_minutes_needed,
         })
 
-    # ── Check 7: Cross-validate downtime vs actual ───────────────────────
-    if total_downtime > 0 and expected["net_production_minutes"] < expected["total_minutes"]:
+    # ── Check 7: Inconsistent downtime vs output ─────────────────────────
+    if downtime_minutes > 0 and expected["net_production_minutes"] < expected["total_minutes"]:
         plan_pct = (actual / plan * 100) if plan > 0 else 0
         time_pct = (expected["net_production_minutes"] / expected["total_minutes"] * 100) if expected["total_minutes"] > 0 else 0
 
@@ -3879,8 +3891,8 @@ def validate_production(
                     f"but only {time_pct:.1f}% of time was available "
                     f"({expected['net_production_minutes']} of {expected['total_minutes']} min). "
                     f"Achieving {plan_pct:.1f}% output in {time_pct:.1f}% of time would require "
-                    f"the line to run {(plan_pct/time_pct*100):.0f}% faster than planned rate. "
-                    f"Either the downtime is overstated or the output count is inflated."
+                    f"the line to run {(plan_pct/time_pct*100):.0f}% faster than planned. "
+                    f"Either downtime is overstated or output count is inflated."
                 ),
             })
 
@@ -3893,17 +3905,15 @@ def validate_production(
         "gap": gap,
         "gap_minutes": gap_minutes,
         "issues": issues,
-        "vos_minutes": vos_minutes,
-        "internal_downtime_minutes": downtime_minutes,
-        "total_downtime_minutes": total_downtime,
+        "downtime_minutes": downtime_minutes,
     }
-
 
 # ---------------- SKIP DETECTION ----------------
 
 SKIP_PHRASES = {
     "skip", "s", "pass", "ignore", "refuse", "no", "nope",
 }
+
 
 def is_skip_response(text: str) -> bool:
     """
@@ -3922,12 +3932,12 @@ def is_skip_response(text: str) -> bool:
 # ---------------- AI PRODUCTION QUESTIONING ----------------
 
 async def generate_production_validation_questions(
-    validation_result: dict,
-    report_type: str = "hourly",
-    shift: int = None,
-    hour: int = None,
-    downtime_events: list = None,
-    categorized_dt: dict = None,
+        validation_result: dict,
+        report_type: str = "hourly",
+        shift: int = None,
+        hour: int = None,
+        downtime_events: list = None,
+        categorized_dt: dict = None,
 ) -> str | None:
     """
     Generates audit questions when production numbers don't match downtime.
@@ -3941,17 +3951,12 @@ async def generate_production_validation_questions(
         for issue in validation_result["issues"]
     ])
 
-    expected        = validation_result["expected"]
-    vos_minutes     = validation_result.get("vos_minutes", 0)
-    internal_dt     = validation_result.get("internal_downtime_minutes", expected["downtime_minutes"])
-    total_dt        = validation_result.get("total_downtime_minutes", expected["downtime_minutes"])
+    expected = validation_result["expected"]
+    total_dt = validation_result.get("total_downtime_minutes", expected["downtime_minutes"])
 
     dt_detail = (
         f"\nDowntime breakdown:\n"
-        f"  Internal (Mech + Elec + Utility) : {internal_dt} min\n"
-        f"  VOS (external power outage)      : {vos_minutes} min\n"
-        f"  ──────────────────────────────────\n"
-        f"  TOTAL downtime                   : {total_dt} min\n"
+        f"  TOTAL downtime : {total_dt} min\n"
     )
 
     if downtime_events:
@@ -3978,12 +3983,6 @@ async def generate_production_validation_questions(
             f"{expected['maximum_possible']:,} packs"
         )
 
-    vos_policy = (
-        f"\nVOS NOTE: {vos_minutes} min of VOS (external power outage) is already "
-        f"counted in the {total_dt} min total downtime. VOS is valid and system-recorded — "
-        f"do NOT question it. Only question the gap that remains AFTER all downtime is subtracted.\n"
-    ) if vos_minutes > 0 else ""
-
     prompt = f"""
 PRODUCTION VALIDATION ALERT — {period_label}
 
@@ -3991,22 +3990,18 @@ FACTS:
 - Plan                  : {validation_result['plan']:,} packs
 - Actual                : {validation_result['actual']:,} packs
 - Available time        : {expected['total_minutes']} min
-- Internal downtime     : {internal_dt} min  (mechanical + electrical + utility)
-- VOS (external)        : {vos_minutes} min  (power outage — valid, system-recorded)
 - Total downtime        : {total_dt} min
 - Net production time   : {expected['net_production_minutes']} min
 - Rate (from plan)      : {expected['rate_per_minute']:.1f} packs/min
 - Expected output       : {expected['expected_output']:,} packs{max_info}
 - Severity              : {validation_result['severity']}
 {dt_detail}
-{vos_policy}
 DETECTED ISSUES:
 {issues_text}
 
 TASK:
 Generate 2-3 SHORT, POINTED, NUMBERED audit questions targeting the UNEXPLAINED
-gap — the gap that remains AFTER all {total_dt} min of downtime (incl. {vos_minutes} min VOS)
-has already been accounted for.
+gap — the gap that remains AFTER all {total_dt} min of downtime has already been accounted for.
 
 Guidelines per issue type:
 1. EXAGGERATED_OUTPUT  → question how actual exceeded physical maximum
@@ -4016,7 +4011,6 @@ Guidelines per issue type:
 
 RULES:
 - Use exact numbers from above
-- VOS is valid — never question it
 - 1-2 sentences per question, firm audit tone
 - Show the arithmetic that exposes the gap
 - Do NOT summarize or suggest solutions
@@ -4033,7 +4027,6 @@ RULES:
                         "role": "system",
                         "content": (
                             "You are a production audit AI for a bottling plant. "
-                            "VOS = external power outage — legitimate downtime, never question it. "
                             "Question ONLY the gap that remains after ALL downtime is subtracted. "
                             "Be direct, mathematical, and firm."
                         ),
@@ -4053,9 +4046,8 @@ RULES:
         for i, issue in enumerate(validation_result["issues"], 1):
             if issue["type"] == "PRODUCTION_GAP":
                 fallback_questions.append(
-                    f"{i}. After subtracting all {total_dt} min downtime "
-                    f"(incl. {vos_minutes} min VOS), net time = "
-                    f"{expected['net_production_minutes']} min → expected "
+                    f"{i}. After subtracting all {total_dt} min of downtime, "
+                    f"net time = {expected['net_production_minutes']} min → expected "
                     f"~{expected['expected_output']:,} packs at "
                     f"{expected['rate_per_minute']:.1f}/min. "
                     f"Actual: {validation_result['actual']:,}. "
@@ -4065,8 +4057,7 @@ RULES:
                 fallback_questions.append(
                     f"{i}. Achievement is "
                     f"{(validation_result['actual'] / validation_result['plan'] * 100):.1f}% "
-                    f"but total downtime is only {total_dt} min "
-                    f"({vos_minutes} min of which is VOS). "
+                    f"but total downtime is only {total_dt} min. "
                     f"~{issue['missing_minutes']} min appear unaccounted. What caused this gap?"
                 )
             else:
@@ -4077,10 +4068,10 @@ RULES:
 # ---------------- OPERATOR ANSWER EVALUATION ----------------
 
 async def evaluate_operator_answer(
-    session_key: str,
-    operator_answer: str,
-    validation_result: dict,
-    conversation_history: list,
+        session_key: str,
+        operator_answer: str,
+        validation_result: dict,
+        conversation_history: list,
 ) -> dict:
     """
     AI evaluates whether the operator's answer convincingly explains
@@ -4209,12 +4200,14 @@ RULES:
             verdict = "FOLLOW_UP"
 
         # Extract reasoning
-        reasoning_match = re.search(r"REASONING:\s*(.+?)(?=\nQUESTION:|\nVERDICT:|\Z)", ai_text, re.DOTALL | re.IGNORECASE)
+        reasoning_match = re.search(r"REASONING:\s*(.+?)(?=\nQUESTION:|\nVERDICT:|\Z)", ai_text,
+                                    re.DOTALL | re.IGNORECASE)
         if reasoning_match:
             reasoning = reasoning_match.group(1).strip()
 
         # Extract follow-up question
-        question_match = re.search(r"QUESTION:\s*(.+?)(?=\nVERDICT:|\nREASONING:|\Z)", ai_text, re.DOTALL | re.IGNORECASE)
+        question_match = re.search(r"QUESTION:\s*(.+?)(?=\nVERDICT:|\nREASONING:|\Z)", ai_text,
+                                   re.DOTALL | re.IGNORECASE)
         if question_match:
             follow_up_question = question_match.group(1).strip()
 
@@ -4241,6 +4234,7 @@ RULES:
             "ai_response": "AI evaluation unavailable — accepting by default.",
             "reasoning": "AI service error — validation skipped.",
         }
+
 
 # ---------------- HOURLY VALIDATION ----------------
 
@@ -4277,11 +4271,6 @@ async def validate_and_question_shift(
     report_text: str,
     shift: int,
 ) -> dict | None:
-    """
-    Called after operator submits shift data.
-    If gap found: posts questions, stores session, BLOCKS summary.
-    Returns validation result (with session_key if blocking).
-    """
     try:
         production_data = parse_report(report_text)
     except Exception:
@@ -4290,12 +4279,8 @@ async def validate_and_question_shift(
     categorized_dt = parse_downtime_categorized(report_text)
     downtime = flatten_categorized_downtime(categorized_dt)
     total_downtime = sum(d["duration"] for d in downtime)
-    
-    # Parse VOS and extract minutes
-    vos_info = parse_vos(report_text)
-    vos_minutes = parse_vos_minutes(vos_info)
-    total_downtime_with_vos = total_downtime + vos_minutes
 
+    # VOS is already deducted from available_time upstream — no separate handling needed
     available_time = production_data.get("available_time") or get_shift_duration_minutes(shift)
 
     validation = validate_production(
@@ -4305,13 +4290,11 @@ async def validate_and_question_shift(
         shift=shift,
         available_time_minutes=available_time,
         report_type="shift",
-        vos_minutes=vos_minutes,
     )
 
     if validation["is_valid"]:
         return validation
 
-    # Generate initial questions
     questions = await generate_production_validation_questions(
         validation_result=validation,
         report_type="shift",
@@ -4324,8 +4307,6 @@ async def validate_and_question_shift(
         return validation
 
     session_key = f"shift_{shift}"
-
-    # Store validation session — this BLOCKS the summary
     validation_sessions[session_key] = {
         "state": VALIDATION_STATE_PENDING,
         "validation_result": validation,
@@ -4333,28 +4314,20 @@ async def validate_and_question_shift(
         "shift": shift,
         "hour": None,
         "report_type": "shift",
-        "conversation": [
-            {"role": "ai_question", "content": questions}
-        ],
+        "conversation": [{"role": "ai_question", "content": questions}],
         "rounds": 0,
         "verdict": None,
         "verdict_reasoning": None,
     }
 
-    severity_icon = {
-        "CRITICAL": "🔴",
-        "SIGNIFICANT": "🟠",
-        "MINOR": "🟡",
-        "NONE": "🟢",
-    }
+    severity_icon = {"CRITICAL": "🔴", "SIGNIFICANT": "🟠", "MINOR": "🟡", "NONE": "🟢"}
     icon = severity_icon.get(validation["severity"], "⚠️")
     expected = validation["expected"]
 
     header = (
         f"{icon} PRODUCTION VALIDATION — Shift {shift} Summary\n\n"
         f"📊 Plan: {validation['plan']:,} | Actual: {validation['actual']:,}\n"
-        f"⏱ Total Downtime: {total_downtime_with_vos} min"
-        f"{' (VOS: ' + str(vos_minutes) + ' min)' if vos_minutes > 0 else ''} | "
+        f"⏱ Downtime: {total_downtime} min | "
         f"Available: {expected['total_minutes']} min | "
         f"Net: {expected['net_production_minutes']} min\n"
         f"📐 Expected: ~{expected['expected_output']:,} | "
@@ -4366,14 +4339,10 @@ async def validate_and_question_shift(
     )
 
     try:
-        await context.bot.send_message(
-            chat_id=GROUP_CHAT_ID,
-            text=header,
-        )
+        await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=header)
     except Exception as e:
         logger.error(f"Failed to send validation questions: {e}")
 
-    # Add session_key to validation result so caller knows summary is blocked
     validation["_session_key"] = session_key
     validation["_blocked"] = True
     return validation
@@ -4385,10 +4354,6 @@ async def validate_and_question_hourly(
     shift: int,
     hour: int,
 ) -> dict | None:
-    """
-    Called after operator submits hourly data.
-    If gap found: posts questions, stores session, BLOCKS summary.
-    """
     try:
         production_data = parse_report(report_text)
     except Exception:
@@ -4397,12 +4362,8 @@ async def validate_and_question_hourly(
     categorized_dt = parse_downtime_categorized(report_text)
     downtime = flatten_categorized_downtime(categorized_dt)
     total_downtime = sum(d["duration"] for d in downtime)
-    
-    # Parse VOS and extract minutes
-    vos_info = parse_vos(report_text)
-    vos_minutes = parse_vos_minutes(vos_info)
-    total_downtime_with_vos = total_downtime + vos_minutes
 
+    # VOS is already deducted from available_time upstream — no separate handling needed
     available_time = production_data.get("available_time") or 60
 
     validation = validate_production(
@@ -4412,7 +4373,6 @@ async def validate_and_question_hourly(
         shift=production_data["shift"],
         available_time_minutes=available_time,
         report_type="hourly",
-        vos_minutes=vos_minutes,
     )
 
     if validation["is_valid"]:
@@ -4431,7 +4391,6 @@ async def validate_and_question_hourly(
         return validation
 
     session_key = f"hourly_{shift}_{hour}"
-
     validation_sessions[session_key] = {
         "state": VALIDATION_STATE_PENDING,
         "validation_result": validation,
@@ -4439,29 +4398,23 @@ async def validate_and_question_hourly(
         "shift": shift,
         "hour": hour,
         "report_type": "hourly",
-        "conversation": [
-            {"role": "ai_question", "content": questions}
-        ],
+        "conversation": [{"role": "ai_question", "content": questions}],
         "rounds": 0,
         "verdict": None,
         "verdict_reasoning": None,
     }
 
-    severity_icon = {
-        "CRITICAL": "🔴",
-        "SIGNIFICANT": "🟠",
-        "MINOR": "🟡",
-        "NONE": "🟢",
-    }
+    severity_icon = {"CRITICAL": "🔴", "SIGNIFICANT": "🟠", "MINOR": "🟡", "NONE": "🟢"}
     icon = severity_icon.get(validation["severity"], "⚠️")
     expected = validation["expected"]
 
     header = (
         f"{icon} PRODUCTION VALIDATION — Shift {shift}, Hour {hour}\n\n"
         f"📊 Plan: {validation['plan']:,} | Actual: {validation['actual']:,}\n"
-        f"⏱ Downtime: {total_downtime_with_vos} min"
-        f"{' (VOS: ' + str(vos_minutes) + ' min)' if vos_minutes > 0 else ''} | Net time: {expected['net_production_minutes']} min\n"
-        f"📐 Expected: ~{expected['expected_output']:,} | Gap: {validation['gap']:,} packs\n"
+        f"⏱ Downtime: {total_downtime} min | "
+        f"Net time: {expected['net_production_minutes']} min\n"
+        f"📐 Expected: ~{expected['expected_output']:,} | "
+        f"Gap: {validation['gap']:,} packs\n"
         f"⚠️ Severity: {validation['severity']}\n\n"
         f"❓ AI Questions:\n{questions}\n\n"
         f"⏳ Summary is HELD until these questions are answered.\n"
@@ -4469,10 +4422,7 @@ async def validate_and_question_hourly(
     )
 
     try:
-        await context.bot.send_message(
-            chat_id=GROUP_CHAT_ID,
-            text=header,
-        )
+        await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=header)
     except Exception as e:
         logger.error(f"Failed to send validation questions: {e}")
 
@@ -4480,10 +4430,9 @@ async def validate_and_question_hourly(
     validation["_blocked"] = True
     return validation
 
-
 async def _release_summary_after_validation(
-    context: ContextTypes.DEFAULT_TYPE,
-    session: dict,
+        context: ContextTypes.DEFAULT_TYPE,
+        session: dict,
 ) -> None:
     """
     Called after validation is APPROVED or REJECTED.
@@ -4502,29 +4451,26 @@ async def _release_summary_after_validation(
         gap_min = validation_result["gap_minutes"]
         expected = validation_result["expected"]
 
-        # Build conversation summary for the report
-        conv_summary = ""
-        for entry in session.get("conversation", []):
-            role = entry.get("role", "")
-            content = entry.get("content", "")
-            if role == "ai_question":
-                conv_summary += f"\n  AI: {content[:200]}"
-            elif role == "operator_answer":
-                conv_summary += f"\n  Operator: {content[:200]}"
+        # Collect only the failure reasons from issues (no back-and-forth)
+        failure_reasons = "\n".join([
+            f"  • [{issue['type']}] {issue['message']}"
+            for issue in validation_result.get("issues", [])
+        ])
 
         validation_notice = (
             f"\n\n🚨 PRODUCTION VALIDATION — UNACCOUNTED LOSS\n"
             f"────────────────────────────\n"
-            f"  • Expected Output: ~{expected['expected_output']:,} packs "
+            f"  • Expected Output : ~{expected['expected_output']:,} packs "
             f"(rate {expected['rate_per_minute']:.1f}/min × {expected['net_production_minutes']} min)\n"
-            f"  • Actual Output: {validation_result['actual']:,} packs\n"
-            f"  • Unaccounted Gap: {gap:,} packs (~{gap_min} min)\n"
-            f"  • Severity: {validation_result['severity']}\n"
-            f"  • Verdict: ❌ REJECTED — Operator explanation NOT convincing\n"
-            f"  • Reason: {verdict_reasoning}\n"
-            f"\n  📋 Validation Exchange:{conv_summary}\n"
+            f"  • Actual Output   : {validation_result['actual']:,} packs\n"
+            f"  • Unaccounted Gap : {gap:,} packs (~{gap_min} min)\n"
+            f"  • Severity        : {validation_result['severity']}\n"
+            f"  • Verdict         : ❌ REJECTED — Operator explanation NOT convincing\n"
+            f"  • Reason          : {verdict_reasoning}\n"
+            f"\n  📋 Failure Summary:\n{failure_reasons}\n"
             f"────────────────────────────"
         )
+
     elif verdict == "APPROVED":
         validation_notice = (
             f"\n\n✅ PRODUCTION VALIDATION — APPROVED\n"
@@ -4542,7 +4488,6 @@ async def _release_summary_after_validation(
         try:
             ai_text = await ai_generate_summary(pending_shift)
 
-            # Inject validation notice into the summary
             if validation_notice:
                 insert_marker = "────────────────────────────\n\n📊 PRODUCTION PERFORMANCE"
                 if insert_marker in ai_text:
@@ -4771,13 +4716,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("hourly_summary_pending", None)
         hour_label = format_hour_range_12h(pending_hour)
         try:
-            current_shift_num = get_shift_for_time(now_ethiopia())
+            # Parse shift from input data - not from scheduled time
+            production_data = parse_report(text)
+            current_shift_num = production_data["shift"]
 
             # ──────────────────────────────────────────────────────
             # ADD THIS BLOCK: Save hourly data to database
             # ──────────────────────────────────────────────────────
             try:
-                production_data = parse_report(text)
                 categorized_dt = parse_downtime_categorized(text)
                 downtime = flatten_categorized_downtime(categorized_dt)
                 rejects = parse_rejects(text)
@@ -4874,6 +4820,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error processing message: {e}")
         await update.message.reply_text("Error processing message. Please try again.")
+
 
 # ---------------- SCHEDULER ----------------
 async def scheduled_audit(app, chat_id, message_text, delay_seconds):
@@ -5361,11 +5308,11 @@ async def setup_shift_schedules(app):
 # ---------------- BOT SETUP ----------------
 async def setup_bot_commands(app):
     commands = [
-        BotCommand("start_audit", "Start production audit manually"),
-        BotCommand("end_audit", "End current audit"),
-        BotCommand("shift_input_1", "Paste Shift 1 report (then auto-summary)"),
-        BotCommand("shift_input_2", "Paste Shift 2 report (then auto-summary)"),
-        BotCommand("shift_input_3", "Paste Shift 3 report (then auto-summary)"),
+        # BotCommand("start_audit", "Start production audit manually"),
+        # BotCommand("end_audit", "End current audit"),
+        # BotCommand("shift_input_1", "Paste Shift 1 report (then auto-summary)"),
+        # BotCommand("shift_input_2", "Paste Shift 2 report (then auto-summary)"),
+        # BotCommand("shift_input_3", "Paste Shift 3 report (then auto-summary)"),
         BotCommand("shift_summary_1", "Shift 1 summary (post to group)"),
         BotCommand("shift_summary_2", "Shift 2 summary (post to group)"),
         BotCommand("shift_summary_3", "Shift 3 summary (post to group)"),
@@ -6615,11 +6562,16 @@ async def hourly_summary_ai_cmd(update: Update, context: ContextTypes.DEFAULT_TY
     hour_label = format_hour_range_12h(hour_slot)
     global active_validation_session_key
     try:
+        # Always use shift from input data - if parsing fails, reject the input
         try:
             h_prod_check = parse_report(report_text)
             current_shift_num = h_prod_check["shift"]
-        except Exception:
-            current_shift_num = get_shift_for_time(now_ethiopia())
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ Error parsing shift from your input: {e}\n\n"
+                "Please ensure your report includes 'Shift = 1st' or 'Shift = 2nd' or 'Shift = 3rd'"
+            )
+            return
 
         # Extract hour explicitly or use parsed hour_slot
         parsed_hour = hour_slot
@@ -6787,7 +6739,6 @@ def get_shift_reminders(shift: int) -> list[tuple[str, str]]:
         ]
 
 
-
 async def bot_status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Check bot status and reminder state"""
     now_pc = now_ethiopia()
@@ -6873,24 +6824,24 @@ def main():
 
     app.add_error_handler(error_handler)
 
-    app.add_handler(CommandHandler("start_audit", start_audit))
-    app.add_handler(CommandHandler("end_audit", end_audit))
+    # app.add_handler(CommandHandler("start_audit", start_audit))
+    # app.add_handler(CommandHandler("end_audit", end_audit))
     app.add_handler(CommandHandler("hourly_summary_ai", hourly_summary_ai_cmd))
     app.add_handler(CommandHandler("shift_summary_hourly", shift_summary_from_hourly_cmd))
     app.add_handler(CommandHandler("all_shift_summary_hourly", all_shift_summary_from_hourly_cmd))
-    app.add_handler(CommandHandler("shift_summary_hourly_1", shift_summary_hourly_1_cmd))
-    app.add_handler(CommandHandler("shift_summary_hourly_2", shift_summary_hourly_2_cmd))
-    app.add_handler(CommandHandler("shift_summary_hourly_3", shift_summary_hourly_3_cmd))
-    app.add_handler(CommandHandler("shift_summary", shift_summary))
-    app.add_handler(CommandHandler("shift_input_1", shift_input_1_cmd))
-    app.add_handler(CommandHandler("shift_input_2", shift_input_2_cmd))
-    app.add_handler(CommandHandler("shift_input_3", shift_input_3_cmd))
-    app.add_handler(CommandHandler("shift_summary_1", shift_summary_1_cmd))
-    app.add_handler(CommandHandler("shift_summary_2", shift_summary_2_cmd))
-    app.add_handler(CommandHandler("shift_summary_3", shift_summary_3_cmd))
-    app.add_handler(CommandHandler("all_shift_summary", all_shift_summary_cmd))
-    app.add_handler(CommandHandler("shift_report", shift_report_cmd))
-    app.add_handler(CommandHandler("test_reminder", test_reminder_cmd))
+    # app.add_handler(CommandHandler("shift_summary_hourly_1", shift_summary_hourly_1_cmd))
+    # app.add_handler(CommandHandler("shift_summary_hourly_2", shift_summary_hourly_2_cmd))
+    # app.add_handler(CommandHandler("shift_summary_hourly_3", shift_summary_hourly_3_cmd))
+    # app.add_handler(CommandHandler("shift_summary", shift_summary))
+    # app.add_handler(CommandHandler("shift_input_1", shift_input_1_cmd))
+    # app.add_handler(CommandHandler("shift_input_2", shift_input_2_cmd))
+    # app.add_handler(CommandHandler("shift_input_3", shift_input_3_cmd))
+    # app.add_handler(CommandHandler("shift_summary_1", shift_summary_1_cmd))
+    # app.add_handler(CommandHandler("shift_summary_2", shift_summary_2_cmd))
+    # app.add_handler(CommandHandler("shift_summary_3", shift_summary_3_cmd))
+    # app.add_handler(CommandHandler("all_shift_summary", all_shift_summary_cmd))
+    # app.add_handler(CommandHandler("shift_report", shift_report_cmd))
+    # app.add_handler(CommandHandler("test_reminder", test_reminder_cmd))
     app.add_handler(CommandHandler("bot_status", bot_status_cmd))
     app.add_handler(CommandHandler("line_off", line_off_cmd))
     app.add_handler(CommandHandler("line_on", line_on_cmd))
