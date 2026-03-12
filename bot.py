@@ -745,9 +745,6 @@ def parse_report(text: str):
     }
 
 
-import re
-
-import re
 
 
 def parse_downtime(text: str):
@@ -1681,19 +1678,19 @@ async def shift_summary_from_hourly_cmd(update: Update, context: ContextTypes.DE
         ai_shift_evidence[shift] = original_evidence
 
 
-async def shift_summary_hourly_1_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate Shift 1 summary from most recent hourly data in database"""
-    await _generate_shift_summary_from_recent_hourly(update, context, 1)
-
-
-async def shift_summary_hourly_2_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate Shift 2 summary from most recent hourly data in database"""
-    await _generate_shift_summary_from_recent_hourly(update, context, 2)
-
-
-async def shift_summary_hourly_3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Generate Shift 3 summary from most recent hourly data in database"""
-    await _generate_shift_summary_from_recent_hourly(update, context, 3)
+# async def shift_summary_hourly_1_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     """Generate Shift 1 summary from most recent hourly data in database"""
+#     await _generate_shift_summary_from_recent_hourly(update, context, 1)
+#
+#
+# async def shift_summary_hourly_2_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     """Generate Shift 2 summary from most recent hourly data in database"""
+#     await _generate_shift_summary_from_recent_hourly(update, context, 2)
+#
+#
+# async def shift_summary_hourly_3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     """Generate Shift 3 summary from most recent hourly data in database"""
+#     await _generate_shift_summary_from_recent_hourly(update, context, 3)
 
 
 async def _generate_shift_summary_from_recent_hourly(update: Update, context: ContextTypes.DEFAULT_TYPE, shift: int):
@@ -1775,7 +1772,7 @@ async def all_shift_summary_from_hourly_cmd(update: Update, context: ContextType
     """
     /all_shift_summary_hourly [date]
     Generate a multi-shift summary by aggregating hourly data for ALL shifts from the DB.
-    Date is optional (DD/MM/YY), defaults to today.
+    Date is optional (DD/MM/YY), defaults to most recent date in database.
     """
     target_date = None
     if context.args:
@@ -1790,11 +1787,16 @@ async def all_shift_summary_from_hourly_cmd(update: Update, context: ContextType
             await update.message.reply_text("Invalid date. Use DD/MM/YY, e.g. 09/03/26")
             return
 
+    # If no date specified, get the most recent date from database
     if target_date is None:
-        target_date = now_ethiopia().date()
+        target_date = get_latest_hourly_date_for_all_shifts()
+        if target_date is None:
+            await update.message.reply_text("⚠️ No hourly data found in database. Submit some reports first.")
+            return
 
     date_label = target_date.strftime("%d/%m/%Y")
 
+    # Rest of your existing code stays the same...
     # Load all shifts from hourly DB
     hourly_evidence = load_all_shifts_from_hourly_db(target_date)
     shifts_found = [s for s in (1, 2, 3) if hourly_evidence.get(s)]
@@ -1855,6 +1857,7 @@ async def all_shift_summary_from_hourly_cmd(update: Update, context: ContextType
             ai_shift_evidence[s] = original_evidence[s]
 
 
+
 async def shift_summary_2_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _do_shift_summary(update, context, 2)
 
@@ -1892,828 +1895,214 @@ async def shift_input_3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "The bot will save it to DB and immediately post the AI summary to the group."
     )
 
-
-# async def ai_generate_summary(shift: int):
-#     evidence = ai_shift_evidence[shift]
-#     if not evidence:
-#         return "No evidence found."
-#
-#     production_data = None
-#     downtime = []
-#     rejects = {}
-#     vos_info = None
-#
-#     for text in reversed(evidence):
-#         try:
-#             production_data = parse_report(text)
-#             downtime = parse_downtime(text)
-#             rejects = parse_rejects(text)
-#             vos_info = parse_vos(text)  # Parse vos separately
-#             break
-#         except:
-#             continue
-#
-#     if not production_data:
-#         return "DATA INCOMPLETE – production report missing."
-#
-#     # ---------------- DATA AGGREGATION ----------------
-#     total_downtime = sum(d["duration"] for d in downtime)
-#     actual_output = production_data["actual"]
-#     plan_output = production_data["plan"]
-#
-#     # Get available time (machine active time) - default to shift duration if not provided
-#     available_time_minutes = production_data.get("available_time")
-#     if available_time_minutes is None:
-#         available_time_minutes = int(get_default_production_hours("shift", shift) * 60)
-#
-#     # Convert to production hours for KPI calculation
-#     production_hours = available_time_minutes / 60
-#
-#     # ---------------- KPI CALCULATION ----------------
-#     kpis = compute_kpis(
-#         plan=plan_output,
-#         actual=actual_output,
-#         downtime_minutes=total_downtime,
-#         production_hours=production_hours,
-#         rejects=rejects
-#     )
-#
-#     # ---------------- RISK CLASSIFICATION ----------------
-#     risk_score = 0
-#
-#     if kpis["performance"] < 60:
-#         risk_score += 3
-#     elif kpis["performance"] < 75:
-#         risk_score += 2
-#
-#     downtime_ratio = round((total_downtime / available_time_minutes) * 100, 2) if available_time_minutes > 0 else 0
-#     if downtime_ratio > 40:
-#         risk_score += 3
-#     elif downtime_ratio > 25:
-#         risk_score += 2
-#
-#     # Risk assessment based on individual reject types (not summed)
-#     total_rejects = rejects.get("bottle", 0) + rejects.get("cap", 0) + rejects.get("label", 0)
-#     if actual_output > 0:
-#         reject_ratio = (total_rejects / actual_output) * 100
-#         if reject_ratio > 5:
-#             risk_score += 2
-#         elif reject_ratio > 2:
-#             risk_score += 1
-#
-#     # Mechanical fault detection
-#     downtime_text = " ".join(d["description"] for d in downtime).lower()
-#     if "misalignment" in downtime_text or "wear" in downtime_text:
-#         risk_score += 1
-#     if "short circuit" in downtime_text or "breaker" in downtime_text:
-#         risk_score += 1
-#     if "glue" in downtime_text or "adhesive" in downtime_text:
-#         risk_score += 1
-#
-#     if risk_score >= 7:
-#         risk_level = "CRITICAL"
-#     elif risk_score >= 5:
-#         risk_level = "HIGH"
-#     elif risk_score >= 3:
-#         risk_level = "MODERATE"
-#     else:
-#         risk_level = "LOW"
-#
-#     audit_status = "CLOSED" if shift_closed[shift] else "FOLLOW-UP REQUIRED"
-#
-#     # ---------------- STRUCTURED DATA FOR AI ----------------
-#     structured_data = f"""
-#                             SHIFT: {shift}
-#                             DATE: {production_data["date"]}
-#                             PRODUCT: {production_data["product_type"]}
-#                             PLAN: {production_data["plan"]}
-#                             ACTUAL: {production_data["actual"]}
-#                             AVAILABLE_TIME: {available_time_minutes} minutes
-#                             PRODUCTION_HOURS: {production_hours:.1f}
-#                             PERFORMANCE: {kpis["performance"]}%
-#                             AVAILABILITY: {kpis["availability"]}%
-#                             QUALITY: {kpis["quality"]}%
-#                             OEE: {kpis["oee"]}%
-#                             TOTAL_DOWNTIME: {total_downtime} minutes
-#                             DOWNTIME_RATIO: {downtime_ratio}%
-#                             REJECTS_BREAKDOWN:
-#                             - Preform: {rejects.get("preform", 0)}
-#                             - Bottle: {rejects.get("bottle", 0)}
-#                             - Cap: {rejects.get("cap", 0)}
-#                             - Label: {rejects.get("label", 0)}
-#                             - Shrink: {rejects.get("shrink", 0)} kg
-#                             DEFECTIVE_QUANTITY: {kpis["defective_qty"]}
-#                             RISK_LEVEL: {risk_level}
-#                             AUDIT_STATUS: {audit_status}
-#                             DOWNTIME_BREAKDOWN:
-#                             {chr(10).join([f"- {d['description']} ({d['duration']} min)" for d in downtime])}
-#                     """
-#
-#     # ---------------- AI EXECUTIVE NARRATIVE ----------------
-#     loop = asyncio.get_running_loop()
-#
-#     def call_ai():
-#         return ai_client.chat.completions.create(
-#             model=AI_MODEL,
-#             messages=[
-#                 {
-#                     "role": "system",
-#                     "content": """
-#         You are a plant-level executive production analyst writing a professional shift summary report.
-#
-#        Write a well-structured executive summary that covers:
-#         - Operational performance against plan
-#         - Downtime impact and equipment reliability concerns
-#         - Quality performance based on reject breakdowns
-#         - Clear conclusions about shift stability
-#
-#         FORMATTING RULES (strict):
-#         - Output 3–4 separate paragraphs. Do NOT merge into one long block.
-#         - Each paragraph: 2–3 sentences only. One idea per paragraph.
-#         - Insert exactly one blank line between each paragraph.
-#         - Avoid wall-of-text. Preserve clarity and technical tone.
-#
-#        WRITING STYLE:
-#         - Use proper grammar, capitalization, and punctuation.
-#         - Begin every sentence with a capital letter.
-#         - Use numeric format for all numbers (e.g., 42%, 64.07%, 240 minutes).
-#         - Do NOT convert numbers into words.
-#         - Be analytical, concise, executive-level.
-#         - Base conclusions strictly on the structured data provided.
-#
-#         """
-#
-#                 },
-#                 {
-#                     "role": "user",
-#                     "content": structured_data
-#                 }
-#             ],
-#             temperature=0.2  # ensures numeric formatting and consistency
-#         )
-#
-#     response = await loop.run_in_executor(None, call_ai)
-#     executive_paragraph = response.choices[0].message.content.strip()
-#
-#     # ---------------- DETAILED BREAKDOWN SECTIONS ----------------
-#     # Production Performance section
-#     production_performance = (
-#         f"📊 PRODUCTION PERFORMANCE\n\n"
-#         f"  • Product: {production_data['product_type']}\n"
-#         f"  • Plan: {plan_output:,} packs\n"
-#         f"  • Actual: {actual_output:,} packs\n"
-#         f"  • Available Time: {available_time_minutes} minutes\n"
-#         f"  • Efficiency: {kpis['performance']}%"
-#     )
-#
-#     # Add VOS if available
-#     if vos_info:
-#         production_performance += f"\n  • VOS: {vos_info}"
-#
-#     # Downtime Analysis section
-#     # Show downtime items as separate data points
-#     downtime_lines = "\n".join(
-#         [f"  • {d['description']} ({d['duration']} min)" for d in downtime]) if downtime else "  • None"
-#     downtime_analysis = (
-#         f"\n\n⏱️ DOWNTIME ANALYSIS\n\n"
-#         f"  • Total Downtime: {total_downtime} minutes\n"
-#         f"  • Downtime Ratio: {downtime_ratio}% of available time\n"
-#         f"{downtime_lines}"
-#     )
-#
-#     # Quality Metrics section
-#     quality_metrics = (
-#         f"\n\n✓ QUALITY METRICS\n\n"
-#         f"  • Preform Rejects: {rejects.get('preform', 0):,} pcs\n"
-#         f"  • Bottle Rejects: {rejects.get('bottle', 0):,} pcs\n"
-#         f"  • Cap Rejects: {rejects.get('cap', 0):,} pcs\n"
-#         f"  • Label Rejects: {rejects.get('label', 0):,} pcs\n"
-#         f"  • Shrink Loss: {rejects.get('shrink', 0)} kg"
-#     )
-#
-#     # ================= EXECUTIVE TABLE BLOCK =================
-#     production_performance_kpi = (
-#         f"📊 PRODUCTION PERFORMANCE\n\n"
-#         f"  • Product: {production_data['product_type']} Ltr\n"
-#         f"  • Plan: {plan_output:,} pcs\n"
-#         f"  • Actual: {actual_output:,} pcs\n"
-#         f"  • Achievement: {kpis['performance']:.1f}%"
-#     )
-#
-#     reject_table = f"""
-# 🔍 QUALITY – REJECT ANALYSIS
-# -------------------------
-#
-# {'Item':<20} {'Reject %':<15} {'Reject Qty':<12}
-# {'-' * 47}
-# Preform              {kpis['reject_percentages']['preform']:.1f} %           {rejects.get('preform', 0)} pcs
-# Bottle               {kpis['reject_percentages']['bottle']:.1f} %          {rejects.get('bottle', 0)} pcs
-# Cap                  {kpis['reject_percentages']['cap']:.1f} %          {rejects.get('cap', 0)} pcs
-# Label                {kpis['reject_percentages']['label']:.1f} %          {rejects.get('label', 0)} pcs
-# Shrink               {kpis['reject_percentages']['shrink']:.1f} %           {rejects.get('shrink', 0)} kg
-# """
-#
-#     oee_performance = (
-#         f"📈 OVERALL EQUIPMENT EFFECTIVENESS\n\n"
-#         f"  • Plan: {plan_output:,} pcs\n"
-#         f"  • Actual: {actual_output:,} pcs\n"
-#         f"  • Defective Quantity: {kpis['defective_qty']:,} pcs\n"
-#         f"  • Production Time: {production_hours:.1f} hr\n"
-#         f"  • Downtime: {kpis['downtime_hours']:.1f} hr\n"
-#         f"  • Availability: {kpis['availability']:.1f}%\n"
-#         f"  • Performance: {kpis['performance']:.1f}%\n"
-#         f"  • Quality: {kpis['quality']:.1f}%\n"
-#         f"  • OEE: {kpis['oee']:.2f}%"
-#     )
-#
-#     # ---------------- FINAL REPORT (universal structure) ----------------
-#     final_report = (
-#         f"✅ STATUS: COMPLETE\n\n"
-#         f"⚠️ RISK LEVEL: {risk_level}\n\n"
-#         f"📋 EXECUTIVE SUMMARY\n\n"
-#         f"{executive_paragraph}\n\n"
-#         f"────────────────────────────\n\n"
-#         f"{production_performance}"
-#         f"{downtime_analysis}"
-#         f"{quality_metrics}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"{reject_table}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"{production_performance_kpi}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"{oee_performance}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"📌 AUDIT STATUS: {audit_status}"
-#     )
-#
-#     return final_report.strip()
+#my added command
+async def shift_summary_hourly_1_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate Shift 1 summary from hourly data"""
+    await generate_shift_summary_from_hourly(update, context, 1)
 
 
-# async def ai_generate_hourly_summary_from_text(report_text: str):
-#     """
-#     Generate an AI executive-style summary for ONE HOUR of production.
-#     The input format is the same as for a shift summary:
-#     - Contains date, shift, shift plan, actual, downtime, rejects, etc.
-#     """
-#     try:
-#         production_data = parse_report(report_text)
-#     except Exception:
-#         return "DATA INCOMPLETE – production report missing."
-#
-#     downtime = parse_downtime(report_text)
-#     rejects = parse_rejects(report_text)
-#     vos_info = parse_vos(report_text)  # Parse vos separately
-#
-#     total_downtime = sum(d["duration"] for d in downtime)
-#     actual_output = production_data["actual"]
-#     plan_output = production_data["plan"]
-#
-#     # Get available time (machine active time) - default to 1 hour for hourly if not provided
-#     available_time_minutes = production_data.get("available_time")
-#     if available_time_minutes is None:
-#         available_time_minutes = int(get_default_production_hours("hourly") * 60)
-#
-#     # Convert to production hours for KPI calculation
-#     production_hours = available_time_minutes / 60
-#
-#     # ---------------- KPI CALCULATION ----------------
-#     kpis = compute_kpis(
-#         plan=plan_output,
-#         actual=actual_output,
-#         downtime_minutes=total_downtime,
-#         production_hours=production_hours,
-#         rejects=rejects
-#     )
-#
-#     # ---------------- RISK CLASSIFICATION ----------------
-#     risk_score = 0
-#
-#     if kpis["performance"] < 60:
-#         risk_score += 3
-#     elif kpis["performance"] < 75:
-#         risk_score += 2
-#
-#     downtime_ratio = round((total_downtime / available_time_minutes) * 100, 2) if available_time_minutes > 0 else 0
-#     if downtime_ratio > 40:
-#         risk_score += 3
-#     elif downtime_ratio > 25:
-#         risk_score += 2
-#
-#     # Risk assessment based on individual reject types (not summed)
-#     total_rejects = rejects.get("bottle", 0) + rejects.get("cap", 0) + rejects.get("label", 0)
-#     if actual_output > 0:
-#         reject_ratio = (total_rejects / actual_output) * 100
-#         if reject_ratio > 5:
-#             risk_score += 2
-#         elif reject_ratio > 2:
-#             risk_score += 1
-#
-#     downtime_text = " ".join(d["description"] for d in downtime).lower()
-#     if "misalignment" in downtime_text or "wear" in downtime_text:
-#         risk_score += 1
-#     if "short circuit" in downtime_text or "breaker" in downtime_text:
-#         risk_score += 1
-#     if "glue" in downtime_text or "adhesive" in downtime_text:
-#         risk_score += 1
-#
-#     if risk_score >= 7:
-#         risk_level = "CRITICAL"
-#     elif risk_score >= 5:
-#         risk_level = "HIGH"
-#     elif risk_score >= 3:
-#         risk_level = "MODERATE"
-#     else:
-#         risk_level = "LOW"
-#
-#     audit_status = "FOLLOW-UP REQUIRED"
-#
-#     # ---------------- STRUCTURED DATA FOR AI ----------------
-#     structured_data = f"""
-#                         HOUR SHIFT: {production_data["shift"]}
-#                         DATE: {production_data["date"]}
-#                         PRODUCT: {production_data["product_type"]}
-#                         PLAN (hour): {production_data["plan"]}
-#                         ACTUAL (hour): {production_data["actual"]}
-#                         AVAILABLE_TIME: {available_time_minutes} minutes
-#                         PRODUCTION_HOURS: {production_hours:.1f}
-#                         PERFORMANCE: {kpis["performance"]}%
-#                         AVAILABILITY: {kpis["availability"]}%
-#                         QUALITY: {kpis["quality"]}%
-#                         OEE: {kpis["oee"]}%
-#                         TOTAL_DOWNTIME: {total_downtime} minutes
-#                         DOWNTIME_RATIO: {downtime_ratio}%
-#                         REJECTS_BREAKDOWN:
-#                         - Preform: {rejects.get("preform", 0)}
-#                         - Bottle: {rejects.get("bottle", 0)}
-#                         - Cap: {rejects.get("cap", 0)}
-#                         - Label: {rejects.get("label", 0)}
-#                         - Shrink: {rejects.get("shrink", 0)} kg
-#                         DEFECTIVE_QUANTITY: {kpis["defective_qty"]}
-#                         RISK_LEVEL: {risk_level}
-#                         AUDIT_STATUS: {audit_status}
-#                         DOWNTIME_BREAKDOWN:
-#                         {chr(10).join([f"- {d['description']} ({d['duration']} min)" for d in downtime])}
-#                 """
-#
-#     loop = asyncio.get_running_loop()
-#
-#     def call_ai():
-#         return ai_client.chat.completions.create(
-#             model=AI_MODEL,
-#             messages=[
-#                 {
-#                     "role": "system",
-#                     "content": """
-# You are a plant-level executive production analyst writing a professional hourly summary report.
-#
-# Write a well-structured executive summary that evaluates ONE HOUR of production:
-# - Operational performance against plan for this hour
-# - Downtime impact and equipment reliability concerns
-# - Quality performance based on reject breakdowns
-# - Clear conclusions about overall hour stability
-#
-# FORMATTING RULES (strict):
-# - Output 3–4 separate paragraphs. Do NOT merge into one long block.
-# - Each paragraph: 2–3 sentences only. One idea per paragraph.
-# - Insert exactly one blank line between each paragraph.
-# - Avoid wall-of-text. Preserve clarity and technical tone.
-#
-# WRITING STYLE:
-# - Use proper grammar, capitalization, and punctuation.
-# - Begin every sentence with a capital letter.
-# - Use numeric format for all numbers (e.g., 42%, 64.07%, 40 minutes).
-# - Do NOT convert numbers into words.
-# - Be analytical, concise, executive-level.
-# - Base conclusions strictly on the structured data provided.
-# """
-#                 },
-#                 {
-#                     "role": "user",
-#                     "content": structured_data
-#                 },
-#             ],
-#             temperature=0.2,
-#         )
-#
-#     response = await loop.run_in_executor(None, call_ai)
-#     executive_paragraph = response.choices[0].message.content.strip()
-#
-#     # ---------------- DETAILED BREAKDOWN SECTIONS ----------------
-#     # Production Performance section
-#     production_performance = (
-#         f"📊 PRODUCTION PERFORMANCE\n\n"
-#         f"  • Product: {production_data['product_type']}\n"
-#         f"  • Plan: {plan_output:,} packs\n"
-#         f"  • Actual: {actual_output:,} packs\n"
-#         f"  • Available Time: {available_time_minutes} minutes\n"
-#         f"  • Efficiency: {kpis['performance']}%"
-#     )
-#
-#     # Add VOS if available
-#     if vos_info:
-#         production_performance += f"\n  • VOS: {vos_info}"
-#
-#     # Downtime Analysis section
-#     # Show downtime items as separate data points
-#     downtime_lines = "\n".join(
-#         [f"  • {d['description']} ({d['duration']} min)" for d in downtime]) if downtime else "  • None"
-#     downtime_analysis = (
-#         f"\n\n⏱️ DOWNTIME ANALYSIS\n\n"
-#         f"  • Total Downtime: {total_downtime} minutes\n"
-#         f"  • Downtime Ratio: {downtime_ratio}% of available time\n"
-#         f"{downtime_lines}"
-#     )
-#
-#     # Quality Metrics section
-#     quality_metrics = (
-#         f"\n\n✓ QUALITY METRICS\n\n"
-#         f"  • Preform Rejects: {rejects.get('preform', 0):,} pcs\n"
-#         f"  • Bottle Rejects: {rejects.get('bottle', 0):,} pcs\n"
-#         f"  • Cap Rejects: {rejects.get('cap', 0):,} pcs\n"
-#         f"  • Label Rejects: {rejects.get('label', 0):,} pcs\n"
-#         f"  • Shrink Loss: {rejects.get('shrink', 0)} kg"
-#     )
-#
-#     # ================= EXECUTIVE TABLE BLOCK =================
-#     production_performance_kpi = (
-#         f"📊 PRODUCTION PERFORMANCE\n\n"
-#         f"  • Product: {production_data['product_type']} Ltr\n"
-#         f"  • Plan: {plan_output:,} pcs\n"
-#         f"  • Actual: {actual_output:,} pcs\n"
-#         f"  • Achievement: {kpis['performance']:.1f}%"
-#     )
-#
-#     reject_table = f"""
-# 🔍 QUALITY – REJECT ANALYSIS
-# -------------------------
-#
-# {'Item':<20} {'Reject %':<15} {'Reject Qty':<12}
-# {'-' * 47}
-# Preform              {kpis['reject_percentages']['preform']:.1f} %           {rejects.get('preform', 0)} pcs
-# Bottle               {kpis['reject_percentages']['bottle']:.1f} %          {rejects.get('bottle', 0)} pcs
-# Cap                  {kpis['reject_percentages']['cap']:.1f} %          {rejects.get('cap', 0)} pcs
-# Label                {kpis['reject_percentages']['label']:.1f} %          {rejects.get('label', 0)} pcs
-# Shrink               {kpis['reject_percentages']['shrink']:.1f} %           {rejects.get('shrink', 0)} kg
-# """
-#
-#     oee_performance = (
-#         f"📈 OVERALL EQUIPMENT EFFECTIVENESS\n\n"
-#         f"  • Plan: {plan_output:,} pcs\n"
-#         f"  • Actual: {actual_output:,} pcs\n"
-#         f"  • Defective Quantity: {kpis['defective_qty']:,} pcs\n"
-#         f"  • Production Time: {production_hours:.1f} hr\n"
-#         f"  • Downtime: {kpis['downtime_hours']:.1f} hr\n"
-#         f"  • Availability: {kpis['availability']:.1f}%\n"
-#         f"  • Performance: {kpis['performance']:.1f}%\n"
-#         f"  • Quality: {kpis['quality']:.1f}%\n"
-#         f"  • OEE: {kpis['oee']:.2f}%"
-#     )
-#
-#     # ---------------- FINAL REPORT (universal structure) ----------------
-#     final_report = (
-#         f"✅ STATUS: COMPLETE\n\n"
-#         f"⚠️ RISK LEVEL: {risk_level}\n\n"
-#         f"📋 EXECUTIVE SUMMARY\n\n"
-#         f"{executive_paragraph}\n\n"
-#         f"────────────────────────────\n\n"
-#         f"{production_performance}"
-#         f"{downtime_analysis}"
-#         f"{quality_metrics}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"{reject_table}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"{production_performance_kpi}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"{oee_performance}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"📌 AUDIT STATUS: {audit_status}"
-#     )
-#
-#     return final_report.strip()
+async def shift_summary_hourly_2_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate Shift 2 summary from hourly data"""
+    await generate_shift_summary_from_hourly(update, context, 2)
 
 
-# async def ai_generate_multi_shift_summary(included_shifts: list[int]):
-#     """
-#     Generate multi-shift summary using deterministic KPI calculations.
-#     Aggregates raw data from included shifts and applies universal report structure.
-#     Ensures all shifts with the same date are included for 24hr production.
-#     """
-#     if not included_shifts:
-#         return None
-#
-#     # ---------------- DATA AGGREGATION ----------------
+async def shift_summary_hourly_3_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate Shift 3 summary from hourly data"""
+    await generate_shift_summary_from_hourly(update, context, 3)
+
+
+# async def generate_shift_summary_from_hourly(update: Update, context: ContextTypes.DEFAULT_TYPE, shift: int):
+#     """Helper function to generate shift summary from hourly data"""
 #     target_date = None
-#     for shift in included_shifts:
-#         if ai_shift_evidence[shift]:
-#             for text in reversed(ai_shift_evidence[shift]):
-#                 try:
-#                     production_data = parse_report(text)
-#                     if production_data and production_data.get("date"):
-#                         target_date = str(production_data["date"])
-#                         break
-#                 except:
-#                     continue
-#         if target_date:
-#             break
-#
-#     if not target_date:
-#         logger.warning("ai_generate_multi_shift_summary: could not find target_date from evidence")
-#         return None
-#
-#     logger.info(f"ai_generate_multi_shift_summary: target_date={target_date}, shifts={included_shifts}")
-#
-#     total_plan = 0
-#     total_actual = 0
-#     total_downtime = 0
-#     total_production_hours = 0
-#     total_rejects = {"preform": 0, "bottle": 0, "cap": 0, "label": 0, "shrink": 0}
-#     product_types = []
-#     all_downtime_items = []
-#     all_vos_info = []  # populated inside loop as "Shift N: value"
-#     shifts_with_data = []  # track which shifts actually had data
-#
-#     for shift in (1, 2, 3):
-#         if not ai_shift_evidence[shift]:
-#             continue
-#
-#         shift_production_data = None
-#         shift_downtime = []
-#         shift_rejects = {}
-#         shift_vos_info = None
-#
-#         for text in reversed(ai_shift_evidence[shift]):
+#     if context.args:
+#         raw = context.args[0].strip()
+#         for fmt in ("%d/%m/%y", "%d/%m/%Y", "%Y-%m-%d"):
 #             try:
-#                 production_data = parse_report(text)
-#                 if production_data and production_data.get("date"):
-#                     parsed_date_str = str(production_data["date"])
-#                     if parsed_date_str == target_date:
-#                         shift_production_data = production_data
-#                         shift_downtime = parse_downtime(text)
-#                         shift_rejects = parse_rejects(text)
-#                         shift_vos_info = parse_vos(text)
-#                         break
-#             except:
+#                 target_date = datetime.strptime(raw, fmt).date()
+#                 break
+#             except ValueError:
 #                 continue
+#         if target_date is None:
+#             await update.message.reply_text(
+#                 f"❌ Invalid date format for Shift {shift}.\n"
+#                 "Use DD/MM/YY — e.g. /shift_summary_hourly_{shift} 24/02/26"
+#             )
+#             return
 #
-#         if not shift_production_data:
-#             logger.info(f"ai_generate_multi_shift_summary: no matching data for shift {shift}")
-#             continue
+#     # Load shift data from hourly database
+#     shift_text = load_shift_evidence_from_hourly_db(shift, target_date)
+#     if not shift_text:
+#         date_str = target_date.strftime("%d/%m/%Y") if target_date else "today"
+#         await update.message.reply_text(
+#             f"⚠️ No hourly data found for Shift {shift} on {date_str}.\n"
+#             "Make sure hourly reports were submitted for that shift."
+#         )
+#         return
 #
-#         logger.info(
-#             f"ai_generate_multi_shift_summary: aggregating shift {shift} — plan={shift_production_data['plan']}, actual={shift_production_data['actual']}")
-#
-#         shifts_with_data.append(shift)
-#
-#         total_plan += shift_production_data["plan"]
-#         total_actual += shift_production_data["actual"]
-#         total_downtime += sum(d["duration"] for d in shift_downtime)
-#
-#         for d in shift_downtime:
-#             all_downtime_items.append({
-#                 "description": d["description"],
-#                 "duration": d["duration"],
-#                 "shift": shift
-#             })
-#
-#         # Collect VOS per shift — always add entry (even if None)
-#         vos_val = shift_vos_info.strip() if shift_vos_info else "none"
-#         all_vos_info.append(f"Shift {shift}: {vos_val}")
-#
-#         available_time_minutes = shift_production_data.get("available_time")
-#         if available_time_minutes is None:
-#             available_time_minutes = int(get_default_production_hours("shift", shift) * 60)
-#         total_production_hours += available_time_minutes / 60
-#
-#         for category in total_rejects:
-#             total_rejects[category] = round(total_rejects[category] + shift_rejects.get(category, 0), 2)
-#
-#         if shift_production_data["product_type"]:
-#             product_types.append(shift_production_data["product_type"])
-#
-#     if total_plan == 0:
-#         logger.warning("ai_generate_multi_shift_summary: total_plan=0, no data aggregated")
-#         return None
-#
-#     # ---------------- KPI CALCULATION ----------------
-#     kpis = compute_kpis(
-#         plan=total_plan,
-#         actual=total_actual,
-#         downtime_minutes=total_downtime,
-#         production_hours=total_production_hours,
-#         rejects=total_rejects
+#     date_str = target_date.strftime("%d/%m/%Y") if target_date else "today"
+#     await update.message.reply_text(
+#         f"⏳ Generating Shift {shift} summary from hourly data for {date_str}..."
 #     )
 #
-#     # ---------------- RISK CLASSIFICATION ----------------
-#     risk_score = 0
+#     try:
+#         # Temporarily use the hourly data for AI generation
+#         original_evidence = ai_shift_evidence[shift].copy()
+#         ai_shift_evidence[shift] = [shift_text]
 #
-#     if kpis["performance"] < 60:
-#         risk_score += 3
-#     elif kpis["performance"] < 75:
-#         risk_score += 2
+#         # Generate AI summary
+#         ai_text = await ai_generate_summary(shift)
+#         daily_ai_shift_summaries[shift] = ai_text
 #
-#     total_available_minutes = total_production_hours * 60
-#     downtime_ratio = round((total_downtime / total_available_minutes) * 100, 2) if total_available_minutes > 0 else 0
-#     if downtime_ratio > 40:
-#         risk_score += 3
-#     elif downtime_ratio > 25:
-#         risk_score += 2
-#
-#     total_reject_count = total_rejects.get("bottle", 0) + total_rejects.get("cap", 0) + total_rejects.get("label", 0)
-#     if total_actual > 0:
-#         reject_ratio = (total_reject_count / total_actual) * 100
-#         if reject_ratio > 5:
-#             risk_score += 2
-#         elif reject_ratio > 2:
-#             risk_score += 1
-#
-#     if risk_score >= 7:
-#         risk_level = "CRITICAL"
-#     elif risk_score >= 5:
-#         risk_level = "HIGH"
-#     elif risk_score >= 3:
-#         risk_level = "MODERATE"
-#     else:
-#         risk_level = "LOW"
-#
-#     audit_status = "CLOSED"
-#
-#     # ---------------- STRUCTURED DATA FOR AI ----------------
-#     product_type_str = ", ".join(set(product_types)) if product_types else "Mixed"
-#
-#     structured_data = f"""
-#                         MULTI-SHIFT SUMMARY: ALL SHIFTS FOR {target_date}
-#                         DATE: {target_date}
-#                         PRODUCT(S): {product_type_str}
-#                         TOTAL PLAN: {total_plan:,}
-#                         TOTAL ACTUAL: {total_actual:,}
-#                         TOTAL PRODUCTION HOURS: {total_production_hours:.1f} hr (22hr planned production)
-#                         PERFORMANCE: {kpis["performance"]}%
-#                         AVAILABILITY: {kpis["availability"]}%
-#                         QUALITY: {kpis["quality"]}%
-#                         OEE: {kpis["oee"]}%
-#                         TOTAL DOWNTIME: {total_downtime} minutes
-#                         DOWNTIME_RATIO: {downtime_ratio}%
-#                         REJECTS_BREAKDOWN:
-#                         - Preform: {total_rejects.get("preform", 0):,}
-#                         - Bottle: {total_rejects.get("bottle", 0):,}
-#                         - Cap: {total_rejects.get("cap", 0):,}
-#                         - Label: {total_rejects.get("label", 0):,}
-#                         - Shrink: {total_rejects.get("shrink", 0):,} kg
-#                         DEFECTIVE_QUANTITY: {kpis["defective_qty"]:,}
-#                         RISK_LEVEL: {risk_level}
-#                         AUDIT_STATUS: {audit_status}
-#                     """
-#
-#     # ---------------- AI EXECUTIVE NARRATIVE ----------------
-#     loop = asyncio.get_running_loop()
-#
-#     def call_ai():
-#         return ai_client.chat.completions.create(
-#             model=AI_MODEL,
-#             messages=[
-#                 {
-#                     "role": "system",
-#                     "content": f"""
-# You are a plant-level executive production analyst writing a professional multi-shift summary report.
-#
-# Write a well-structured executive summary that analyzes the complete 24-hour production performance for {target_date}:
-# - Overall operational performance against aggregated plan across all shifts
-# - Cumulative downtime impact and equipment reliability trends across all shifts
-# - Aggregate quality performance and reject patterns across all shifts
-# - Clear conclusions about full-day production stability and 24-hour operational effectiveness
-#
-# FORMATTING RULES (strict):
-# - Output 3–4 separate paragraphs. Do NOT merge into one long block.
-# - Each paragraph: 2–3 sentences only. One idea per paragraph.
-# - Insert exactly one blank line between each paragraph.
-# - Avoid wall-of-text. Preserve clarity and technical tone.
-#
-# WRITING STYLE:
-# - Use proper grammar, capitalization, and punctuation.
-# - Begin every sentence with a capital letter.
-# - Use numeric format for all numbers (e.g., 42%, 64.07%, 350 minutes).
-# - Do NOT convert numbers into words.
-# - Be analytical, concise, executive-level.
-# - Base conclusions strictly on the structured data provided for all shifts with the same date.
-# """
-#                 },
-#                 {
-#                     "role": "user",
-#                     "content": structured_data
-#                 }
-#             ],
-#             temperature=0.2,
+#         # Post to group
+#         await context.bot.send_message(
+#             chat_id=GROUP_CHAT_ID,
+#             text=f"📊 SHIFT {shift} SUMMARY (from hourly data)\n\n{ai_text}",
 #         )
 #
-#     response = await loop.run_in_executor(None, call_ai)
-#     executive_paragraph = response.choices[0].message.content.strip()
+#         # Restore original evidence
+#         ai_shift_evidence[shift] = original_evidence
 #
-#     # ---------------- DETAILED BREAKDOWN SECTIONS ----------------
+#         await update.message.reply_text(f"✅ Shift {shift} summary generated from hourly data and posted to group.")
 #
-#     # ── Production Performance ───────────────────────────────────────────────
-#     production_performance = (
-#         f"📊 PRODUCTION PERFORMANCE\n\n"
-#         f"  • Product: {product_type_str}\n"
-#         f"  • Plan: {total_plan:,} packs\n"
-#         f"  • Actual: {total_actual:,} packs\n"
-#         f"  • Available Time: {total_available_minutes:.0f} minutes\n"
-#         f"  • Efficiency: {kpis['performance']}%\n"
-#         f"  • VOS:\n"
-#     )
-#     # One line per shift that had data — always shows, "none" if no VOS reported
-#     for vos_entry in all_vos_info:
-#         production_performance += f"      {vos_entry}\n"
-#
-#     # ── Downtime Analysis ────────────────────────────────────────────────────
-#     shift_downtime_groups = {}
-#     for item in all_downtime_items:
-#         shift_num = item["shift"]
-#         if shift_num not in shift_downtime_groups:
-#             shift_downtime_groups[shift_num] = []
-#         shift_downtime_groups[shift_num].append(f"  • {item['description']} ({item['duration']} min)")
-#
-#     downtime_lines = ""
-#     for shift_num in sorted(shift_downtime_groups.keys()):
-#         downtime_lines += f"\nShift {shift_num}:\n"
-#         downtime_lines += "\n".join(shift_downtime_groups[shift_num])
-#
-#     if not all_downtime_items:
-#         downtime_lines = "  • None"
-#
-#     downtime_analysis = (
-#         f"\n\n⏱️ DOWNTIME ANALYSIS\n\n"
-#         f"  • Total Downtime: {total_downtime} minutes\n"
-#         f"  • Downtime Ratio: {downtime_ratio}% of available time\n"
-#         f"{downtime_lines}"
-#     )
-#
-#     # ── Quality Metrics ──────────────────────────────────────────────────────
-#     quality_metrics = (
-#         f"\n\n✓ QUALITY METRICS\n\n"
-#         f"  • Preform Rejects: {total_rejects.get('preform', 0):,} pcs\n"
-#         f"  • Bottle Rejects: {total_rejects.get('bottle', 0):,} pcs\n"
-#         f"  • Cap Rejects: {total_rejects.get('cap', 0):,} pcs\n"
-#         f"  • Label Rejects: {total_rejects.get('label', 0):,} pcs\n"
-#         f"  • Shrink Loss: {round(total_rejects.get('shrink', 0), 2)} kg"
-#     )
-#
-#     # ── KPI Table ────────────────────────────────────────────────────────────
-#     production_performance_kpi = (
-#         f"📊 PRODUCTION PERFORMANCE\n\n"
-#         f"  • Product: {product_type_str} Ltr\n"
-#         f"  • Plan: {total_plan:,} pcs\n"
-#         f"  • Actual: {total_actual:,} pcs\n"
-#         f"  • Achievement: {kpis['performance']:.1f}%"
-#     )
-#
-#     reject_table = f"""
-# 🔍 QUALITY – REJECT ANALYSIS
-# -------------------------
-#
-# {'Item':<20} {'Reject %':<15} {'Reject Qty':<12}
-# {'-' * 47}
-# Preform              {kpis['reject_percentages']['preform']:.1f} %           {total_rejects.get('preform', 0)} pcs
-# Bottle               {kpis['reject_percentages']['bottle']:.1f} %          {total_rejects.get('bottle', 0)} pcs
-# Cap                  {kpis['reject_percentages']['cap']:.1f} %          {total_rejects.get('cap', 0)} pcs
-# Label                {kpis['reject_percentages']['label']:.1f} %          {total_rejects.get('label', 0)} pcs
-# Shrink               {kpis['reject_percentages']['shrink']:.1f} %           {round(total_rejects.get('shrink', 0), 2)} kg
-# """
-#
-#     oee_performance = (
-#         f"📈 OVERALL EQUIPMENT EFFECTIVENESS\n\n"
-#         f"  • Plan: {total_plan:,} pcs\n"
-#         f"  • Actual: {total_actual:,} pcs\n"
-#         f"  • Defective Quantity: {kpis['defective_qty']:,} pcs\n"
-#         f"  • Production Time: {total_production_hours:.1f} hr\n"
-#         f"  • Downtime: {kpis['downtime_hours']:.1f} hr\n"
-#         f"  • Availability: {kpis['availability']:.1f}%\n"
-#         f"  • Performance: {kpis['performance']:.1f}%\n"
-#         f"  • Quality: {kpis['quality']:.1f}%\n"
-#         f"  • OEE: {kpis['oee']:.2f}%"
-#     )
-#
-#     # ---------------- FINAL REPORT ----------------
-#     final_report = (
-#         f"✅ STATUS: COMPLETE\n\n"
-#         f"⚠️ RISK LEVEL: {risk_level}\n\n"
-#         f"📋 EXECUTIVE SUMMARY\n\n"
-#         f"{executive_paragraph}\n\n"
-#         f"────────────────────────────\n\n"
-#         f"{production_performance}"
-#         f"{downtime_analysis}"
-#         f"{quality_metrics}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"{reject_table}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"{production_performance_kpi}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"{oee_performance}"
-#         f"\n\n────────────────────────────\n\n"
-#         f"📌 AUDIT STATUS: {audit_status}"
-#     )
-#
-#     return final_report.strip()
+#     except Exception as e:
+#         logger.error(f"Error generating shift summary from hourly data: {e}")
+#         await update.message.reply_text(f"❌ Error generating Shift {shift} summary: {e}")
 
+async def generate_shift_summary_from_hourly(update: Update, context: ContextTypes.DEFAULT_TYPE, shift: int):
+    """Helper function to generate shift summary from hourly data"""
+    target_date = None
+    if context.args:
+        raw = context.args[0].strip()
+        for fmt in ("%d/%m/%y", "%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                target_date = datetime.strptime(raw, fmt).date()
+                break
+            except ValueError:
+                continue
+        if target_date is None:
+            await update.message.reply_text(
+                f"❌ Invalid date format for Shift {shift}.\n"
+                "Use DD/MM/YY — e.g. /shift_summary_hourly_{shift} 24/02/26"
+            )
+            return
+    else:
+        # If no date specified, find the most recent date with hourly data for this shift
+        target_date = get_latest_hourly_date_for_shift(shift)
+        if not target_date:
+            await update.message.reply_text(
+                f"⚠️ No hourly data found for Shift {shift} in the database.\n"
+                "Make sure hourly reports were submitted for that shift."
+            )
+            return
+
+    # Load shift data from hourly database
+    shift_text = load_shift_evidence_from_hourly_db(shift, target_date)
+    if not shift_text:
+        date_str = target_date.strftime("%d/%m/%Y") if target_date else "unknown"
+        await update.message.reply_text(
+            f"⚠️ No hourly data found for Shift {shift} on {date_str}.\n"
+            "Make sure hourly reports were submitted for that shift."
+        )
+        return
+
+    date_str = target_date.strftime("%d/%m/%Y") if target_date else "unknown"
+    await update.message.reply_text(
+        f"⏳ Generating Shift {shift} summary from hourly data for {date_str}..."
+    )
+
+    try:
+        # Temporarily use the hourly data for AI generation
+        original_evidence = ai_shift_evidence[shift].copy()
+        ai_shift_evidence[shift] = [shift_text]
+
+        # Generate AI summary
+        ai_text = await ai_generate_summary(shift)
+        daily_ai_shift_summaries[shift] = ai_text
+
+        # Post to group
+        await context.bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text=f"📊 SHIFT {shift} SUMMARY (from hourly data - {date_str})\n\n{ai_text}",
+        )
+
+        # Restore original evidence
+        ai_shift_evidence[shift] = original_evidence
+
+        await update.message.reply_text(
+            f"✅ Shift {shift} summary generated from hourly data for {date_str} and posted to group.")
+
+    except Exception as e:
+        logger.error(f"Error generating shift summary from hourly data: {e}")
+        await update.message.reply_text(f"❌ Error generating Shift {shift} summary: {e}")
+
+
+def get_latest_hourly_date_for_shift(shift: int):
+    """
+    Find the most recent date that has hourly data for the specified shift.
+    Returns date object or None if no data found.
+    """
+    _ensure_hourly_production_table()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Find the most recent date with hourly data for this shift
+        cur.execute("""
+            SELECT date FROM hourly_production 
+            WHERE shift = %s AND actual_output > 0
+            ORDER BY date DESC, hour_number DESC 
+            LIMIT 1
+        """, (shift,))
+
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if result:
+            return result[0]
+        return None
+
+    except Exception as e:
+        logger.error(f"Error finding latest hourly date for shift {shift}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_latest_hourly_date_for_all_shifts():
+    """
+    Find the most recent date that has hourly data for ANY shift.
+    Returns date object or None if no data found.
+    """
+    _ensure_hourly_production_table()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Find the most recent date with hourly data for any shift
+        cur.execute("""
+            SELECT date FROM hourly_production 
+            WHERE actual_output > 0
+            ORDER BY date DESC, hour_number DESC 
+            LIMIT 1
+        """)
+
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if result:
+            return result[0]
+        return None
+
+    except Exception as e:
+        logger.error(f"Error finding latest hourly date for all shifts: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
 
 async def generate_multi_shift_summary_and_post(
         context: ContextTypes.DEFAULT_TYPE,
@@ -4539,6 +3928,63 @@ async def _release_summary_after_validation(
     validation_sessions.pop(session_key, None)
 
 
+
+async def all_shift_summary_handler(client, message):
+    try:
+        # Get today's date
+        today = datetime.now().date()
+
+        # Find all shifts with data for today
+        available_shifts = []
+        for shift in (1, 2, 3):
+            if ai_shift_evidence[shift]:
+                # Check if there's data for today
+                for text in reversed(ai_shift_evidence[shift]):
+                    try:
+                        production_data = parse_report(text)
+                        if production_data and str(production_data.get("date")) == today.strftime('%Y-%m-%d'):
+                            available_shifts.append(shift)
+                            break
+                    except:
+                        continue
+
+        if not available_shifts:
+            await message.reply("❌ No shift data found for today.")
+            return
+
+        # Generate multi-shift summary using your existing function
+        multi_shift_summary = await ai_generate_multi_shift_summary(available_shifts)
+
+        if not multi_shift_summary:
+            await message.reply("❌ Unable to generate multi-shift summary.")
+            return
+
+        # Create shift list for title (same format as your other generators)
+        shift_list = sorted(available_shifts)
+        if len(shift_list) == 1:
+            shift_text = f"Shift {shift_list[0]}"
+        elif len(shift_list) == 2:
+            shift_text = f"Shift {shift_list[0]} and Shift {shift_list[1]}"
+        else:
+            shift_text = f"Shift {', Shift '.join(map(str, shift_list[:-1]))} and Shift {shift_list[-1]}"
+
+        # Format response exactly like your shift generators
+        response = f"📊 **All Shift Summary for {today.strftime('%Y-%m-%d')}**\n"
+        response += f"**Data from:** {shift_text}\n\n"
+        response += f"**Multi-Shift Analysis:**\n{multi_shift_summary}"
+
+        # Send response (split if too long, same as your other generators)
+        if len(response) > 4000:
+            chunks = [response[i:i + 4000] for i in range(0, len(response), 4000)]
+            for chunk in chunks:
+                await message.reply(chunk)
+        else:
+            await message.reply(response)
+
+    except Exception as e:
+        print(f"Error in all_shift_summary: {e}")
+        await message.reply("❌ Error generating summary. Please try again.")
+
 # ---------------- MESSAGE HANDLER ----------------
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4708,21 +4154,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Error generating shift summary: {e}")
         return
 
+
     # ═══════════════════════════════════════════════════════════════════
     # PRIORITY 3: Hourly summary two-step
     # ═══════════════════════════════════════════════════════════════════
     pending_hour = context.user_data.get("hourly_summary_pending")
-    if pending_hour is not None and text and not text.startswith("/"):
+    if pending_hour and text and not text.startswith("/"):
         context.user_data.pop("hourly_summary_pending", None)
-        hour_label = format_hour_range_12h(pending_hour)
         try:
-            # Parse shift from input data - not from scheduled time
+            # Parse shift and hour from input data
             production_data = parse_report(text)
             current_shift_num = production_data["shift"]
 
-            # ──────────────────────────────────────────────────────
-            # ADD THIS BLOCK: Save hourly data to database
-            # ──────────────────────────────────────────────────────
+            # Extract hour number from the report text
+            hour_match = re.search(r"hour\s+number\s+(\d+)", text.lower())
+            if hour_match:
+                hour_slot = int(hour_match.group(1))
+            else:
+                # Fallback to current hour if not found in report
+                now = now_ethiopia()
+                hour_slot = get_current_hour_number(current_shift_num, now)
+
+            hour_label = f"Shift {current_shift_num}, Hour {hour_slot}"
+
+            # Save hourly data to database
             try:
                 categorized_dt = parse_downtime_categorized(text)
                 downtime = flatten_categorized_downtime(categorized_dt)
@@ -4732,25 +4187,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     data=production_data,
                     downtime=downtime,
                     rejects=rejects,
-                    hour_number=pending_hour,
+                    hour_number=hour_slot,
                     vos_info=vos_info,
                     shift_override=current_shift_num,
                 )
-                logger.info(f"Hourly data saved: shift={current_shift_num}, hour={pending_hour}")
+                logger.info(f"Hourly data saved: shift={current_shift_num}, hour={hour_slot}")
             except Exception as e:
                 logger.warning(f"Hourly DB save skipped: {e}")
-            # ──────────────────────────────────────────────────────
 
             # Validate production — may BLOCK summary
             validation = await validate_and_question_hourly(
-                context, text, current_shift_num, pending_hour
+                context, text, current_shift_num, hour_slot
             )
             await asyncio.sleep(1)
 
             if validation and validation.get("_blocked"):
                 session_key = validation["_session_key"]
                 context.user_data["active_validation_session"] = session_key
-                validation_sessions[session_key]["_pending_hour"] = pending_hour
+                validation_sessions[session_key]["_pending_hour"] = hour_slot
                 validation_sessions[session_key]["_report_text"] = text
                 validation_sessions[session_key]["_hour_label"] = hour_label
                 return
@@ -5310,16 +4764,11 @@ async def setup_bot_commands(app):
     commands = [
         # BotCommand("start_audit", "Start production audit manually"),
         # BotCommand("end_audit", "End current audit"),
-        # BotCommand("shift_input_1", "Paste Shift 1 report (then auto-summary)"),
-        # BotCommand("shift_input_2", "Paste Shift 2 report (then auto-summary)"),
-        # BotCommand("shift_input_3", "Paste Shift 3 report (then auto-summary)"),
-        BotCommand("shift_summary_1", "Shift 1 summary (post to group)"),
-        BotCommand("shift_summary_2", "Shift 2 summary (post to group)"),
-        BotCommand("shift_summary_3", "Shift 3 summary (post to group)"),
-        BotCommand("all_shift_summary", "AI summary across closed shifts"),
         BotCommand("hourly_summary_ai", "Hourly AI summary (optional: hour 0-23)"),
-        BotCommand("shift_report", "View shift reports (1+2 or all shifts)"),
-        BotCommand("test_reminder", "Test reminder system (sends immediately)"),
+        BotCommand("shift_summary_hourly_1", "Shift 1 summary from hourly data"),
+        BotCommand("shift_summary_hourly_2", "Shift 2 summary from hourly data"),
+        BotCommand("shift_summary_hourly_3", "Shift 3 summary from hourly data"),
+        BotCommand("all_shift_summary_hourly", "AI summary across all shifts"),
         BotCommand("bot_status", "Check bot status and reminder state"),
         BotCommand("line_off", "Set line OFF (queue all reminders)"),
         BotCommand("line_on", "Set line ON (flush queued reminders)"),
@@ -6104,6 +5553,147 @@ def load_shift_evidence_from_db(target_date=None) -> dict:
             conn.close()
 
 
+# def load_shift_evidence_from_hourly_db(shift: int, target_date=None) -> str | None:
+#     """
+#     Load ALL hourly records for a given shift+date from hourly_production,
+#     aggregate them into a single shift-level text blob that parse_report(),
+#     parse_downtime_categorized(), parse_rejects() can all understand.
+#
+#     Returns a reconstructed report string or None if no hourly data found.
+#     """
+#     _ensure_hourly_production_table()
+#     conn = None
+#     try:
+#         conn = get_db_connection()
+#         cur = conn.cursor()
+#
+#         if target_date is None:
+#             target_date = now_ethiopia().date()
+#
+#         from datetime import date as date_type
+#         if isinstance(target_date, str):
+#             for fmt in ("%Y-%m-%d", "%d/%m/%y", "%d/%m/%Y"):
+#                 try:
+#                     target_date = datetime.strptime(target_date, fmt).date()
+#                     break
+#                 except ValueError:
+#                     continue
+#         if not isinstance(target_date, date_type):
+#             return None
+#
+#         # Fetch all hourly rows for this shift+date
+#         cur.execute("""
+#             SELECT id, hour_number, product_type, hour_plan, actual_output,
+#                    available_time_minutes, vos_info
+#             FROM hourly_production
+#             WHERE date = %s AND shift = %s
+#             ORDER BY hour_number
+#         """, (target_date, shift))
+#         hourly_rows = cur.fetchall()
+#
+#         if not hourly_rows:
+#             cur.close()
+#             return None
+#
+#         # Aggregate
+#         total_plan = 0
+#         total_actual = 0
+#         total_available = 0
+#         product_types = set()
+#         all_vos = []
+#         # Downtime by category
+#         agg_downtime = {"MECHANICAL": [], "ELECTRICAL": [], "UTILITY": []}
+#         # Rejects
+#         total_rejects = {"preform": 0, "bottle": 0, "cap": 0, "label": 0, "shrink": 0.0}
+#         hours_included = []
+#
+#         for row in hourly_rows:
+#             h_id, hour_num, prod_type, h_plan, h_actual, h_avail, h_vos = row
+#             total_plan += h_plan or 0
+#             total_actual += h_actual or 0
+#             total_available += h_avail or 60
+#             if prod_type:
+#                 product_types.add(prod_type.strip())
+#             if h_vos:
+#                 all_vos.append(f"Hr{hour_num}: {h_vos}")
+#             hours_included.append(hour_num)
+#
+#             # Fetch downtime for this hour
+#             cur.execute("""
+#                 SELECT description, duration_min, category
+#                 FROM hourly_downtime_events
+#                 WHERE hourly_production_id = %s
+#             """, (h_id,))
+#             for desc, dur, cat in cur.fetchall():
+#                 cat_upper = (cat or "MECHANICAL").upper().strip()
+#                 if cat_upper not in agg_downtime:
+#                     cat_upper = "MECHANICAL"
+#                 agg_downtime[cat_upper].append((desc, dur))
+#
+#             # Fetch rejects for this hour
+#             cur.execute("""
+#                 SELECT preform, bottle, cap, label, shrink
+#                 FROM hourly_rejects
+#                 WHERE hourly_production_id = %s
+#             """, (h_id,))
+#             rej = cur.fetchone()
+#             if rej:
+#                 total_rejects["preform"] += rej[0] or 0
+#                 total_rejects["bottle"] += rej[1] or 0
+#                 total_rejects["cap"] += rej[2] or 0
+#                 total_rejects["label"] += rej[3] or 0
+#                 total_rejects["shrink"] += rej[4] or 0.0
+#
+#         cur.close()
+#
+#         # Build text blob
+#         date_str = target_date.strftime("%d/%m/%y")
+#         shift_label = {1: "1st", 2: "2nd", 3: "3rd"}.get(shift, "1st")
+#         product_str = ", ".join(product_types) if product_types else "N/A"
+#
+#         lines = [
+#             f"Date {date_str}",
+#             f"Shift {shift_label}",
+#             f"Product type {product_str}",
+#             f"Shift plan = {total_plan}",
+#             f"Actual output = {total_actual}",
+#             f"Available time = {total_available}",
+#         ]
+#
+#         if all_vos:
+#             lines.append(f"VOS = {'; '.join(all_vos)}")
+#
+#         # Downtime with category headers
+#         for cat in ("MECHANICAL", "ELECTRICAL", "UTILITY"):
+#             lines.append(cat)
+#             events = agg_downtime[cat]
+#             if events:
+#                 for desc, dur in events:
+#                     lines.append(f"• {desc} {dur} min")
+#             else:
+#                 lines.append("• None")
+#
+#         # Rejects
+#         lines.append(f"Preform = {total_rejects['preform']}")
+#         lines.append(f"Bottle = {total_rejects['bottle']}")
+#         lines.append(f"Cap = {total_rejects['cap']}")
+#         lines.append(f"Label = {total_rejects['label']}")
+#         lines.append(f"Shrink = {round(total_rejects['shrink'], 2)}")
+#
+#         text_blob = "\n".join(lines)
+#         logger.info(
+#             f"load_shift_evidence_from_hourly_db: shift={shift} date={target_date} "
+#             f"hours={hours_included} plan={total_plan} actual={total_actual}"
+#         )
+#         return text_blob
+#
+#     except Exception as e:
+#         logger.error(f"load_shift_evidence_from_hourly_db failed: {e}", exc_info=True)
+#         return None
+#     finally:
+#         if conn:
+#             conn.close()
+
 def load_shift_evidence_from_hourly_db(shift: int, target_date=None) -> str | None:
     """
     Load ALL hourly records for a given shift+date from hourly_production,
@@ -6119,7 +5709,12 @@ def load_shift_evidence_from_hourly_db(shift: int, target_date=None) -> str | No
         cur = conn.cursor()
 
         if target_date is None:
-            target_date = now_ethiopia().date()
+            # Find the most recent date with hourly data for this shift
+            target_date = get_latest_hourly_date_for_shift(shift)
+            if not target_date:
+                cur.close()
+                conn.close()
+                return None
 
         from datetime import date as date_type
         if isinstance(target_date, str):
@@ -6130,6 +5725,8 @@ def load_shift_evidence_from_hourly_db(shift: int, target_date=None) -> str | No
                 except ValueError:
                     continue
         if not isinstance(target_date, date_type):
+            cur.close()
+            conn.close()
             return None
 
         # Fetch all hourly rows for this shift+date
@@ -6144,8 +5741,10 @@ def load_shift_evidence_from_hourly_db(shift: int, target_date=None) -> str | No
 
         if not hourly_rows:
             cur.close()
+            conn.close()
             return None
 
+        # [Rest of the function remains the same...]
         # Aggregate
         total_plan = 0
         total_actual = 0
@@ -6519,63 +6118,44 @@ def _shift_had_any_production(shift: int, date_iso: str) -> bool:
 async def hourly_summary_ai_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Two ways to use:
-    1) Two-step: Send /hourly_summary_ai 11 (or just 11 for 11:00–12:00). Bot asks for the report. Send the report in your next message.
-    2) One message: /hourly_summary_ai 11 Date 18/02/26 Shift 2nd ... (hour + full report text)
+    1) Two-step: Send /hourly_summary_ai. Bot asks for the report. Send the report in your next message.
+    2) One message: /hourly_summary_ai Date 18/02/26 Shift 2nd ... (full report text)
     No need to start AI audit – this command works on its own.
     """
-    if not context.args:
-        await update.message.reply_text(
-            "📝 *Hourly summary* – two options:\n\n"
-            "1️⃣ *Two-step (easiest):*\n"
-            "  Send: /hourly_summary_ai 11\n"
-            "  (11 = hour 11:00–12:00; use 0–23)\n"
-            "  Then send your hourly report in the *next message* (same format as shift: Date, Shift, Product type, Plan, Actual, Downtime, Rejects).\n\n"
-            "2️⃣ *One message:*\n"
-            "  /hourly_summary_ai 11 Date 18/02/26 Shift 2nd Product type Water ...\n\n"
-            "Without hour: last hour is used.",
-            parse_mode="Markdown"
-        )
-        return
-
-    hour_slot, report_text = _parse_hour_arg(context.args)
-
-    if hour_slot is None and report_text:
-        # Only report text, no hour → use last hour
-        now = now_ethiopia()
-        hour_slot = (now.hour - 1) % 24
+    report_text = " ".join(context.args).strip() if context.args else ""
 
     if not report_text:
-        # User sent e.g. /hourly_summary_ai 11 → wait for next message
-        if hour_slot is None:
-            now = now_ethiopia()
-            hour_slot = (now.hour - 1) % 24
-        context.user_data["hourly_summary_pending"] = hour_slot
-        hour_label = format_hour_range_12h(hour_slot)
+        # User sent just /hourly_summary_ai → wait for next message
+        context.user_data["hourly_summary_pending"] = True
         await update.message.reply_text(
-            f"✅ Hour set to *{hour_label}*.\n\n"
-            "Now send your hourly report in the *next message* (same format as shift report):\n"
-            "Date, Shift, Product type, Shift plan, Actual, Downtime, Rejects.",
+            "✅ Please send your hourly report in the *next message* (same format as shift report):\n"
+            "Date, Shift, Product type, Hour number, Available time, Shift plan, Actual, Downtime, Rejects.",
             parse_mode="Markdown"
         )
         return
 
-    hour_label = format_hour_range_12h(hour_slot)
-    global active_validation_session_key
+    # Process the report immediately
     try:
-        # Always use shift from input data - if parsing fails, reject the input
+        # Parse shift and hour from input data
         try:
             h_prod_check = parse_report(report_text)
             current_shift_num = h_prod_check["shift"]
+            # Extract hour number from the report text
+            hour_match = re.search(r"hour\s+number\s+(\d+)", report_text.lower())
+            if hour_match:
+                hour_slot = int(hour_match.group(1))
+            else:
+                # Fallback to current hour if not found in report
+                now = now_ethiopia()
+                hour_slot = get_current_hour_number(current_shift_num, now)
         except Exception as e:
             await update.message.reply_text(
-                f"❌ Error parsing shift from your input: {e}\n\n"
-                "Please ensure your report includes 'Shift = 1st' or 'Shift = 2nd' or 'Shift = 3rd'"
+                f"❌ Error parsing your input: {e}\n\n"
+                "Please ensure your report includes 'Shift = 1st/2nd/3rd' and 'Hour number X'"
             )
             return
 
-        # Extract hour explicitly or use parsed hour_slot
-        parsed_hour = hour_slot
-        hour_label = f"Shift {current_shift_num}, Hour {parsed_hour}"
+        hour_label = f"Shift {current_shift_num}, Hour {hour_slot}"
 
         try:
             h_prod = parse_report(report_text)
@@ -6585,7 +6165,7 @@ async def hourly_summary_ai_cmd(update: Update, context: ContextTypes.DEFAULT_TY
             h_vos = parse_vos(report_text)
             save_hourly_to_database(
                 h_prod, h_downtime, h_rejects,
-                hour_number=parsed_hour,
+                hour_number=hour_slot,
                 vos_info=h_vos,
                 shift_override=current_shift_num,
             )
@@ -6593,17 +6173,17 @@ async def hourly_summary_ai_cmd(update: Update, context: ContextTypes.DEFAULT_TY
             logger.warning(f"Hourly DB save skipped in command: {e}")
 
         validation = await validate_and_question_hourly(
-            context, report_text, current_shift_num, parsed_hour
+            context, report_text, current_shift_num, hour_slot
         )
         await asyncio.sleep(1)
 
         if validation and validation.get("_blocked"):
             session_key = validation["_session_key"]
-            active_validation_session_key = session_key
-            validation_sessions[session_key]["_pending_hour"] = parsed_hour
+            context.user_data["active_validation_session"] = session_key
+            validation_sessions[session_key]["_pending_hour"] = hour_slot
             validation_sessions[session_key]["_report_text"] = report_text
             validation_sessions[session_key]["_hour_label"] = hour_label
-            return  # ✅ hold — summary comes after verdict
+            return
         else:
             ai_summary = await ai_generate_hourly_summary_from_text(report_text)
             await context.bot.send_message(
@@ -6614,7 +6194,6 @@ async def hourly_summary_ai_cmd(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         logger.error(f"Error generating hourly summary: {e}")
         await update.message.reply_text(f"❌ Error generating hourly summary: {e}")
-
 
 async def shift_report_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -6823,12 +6402,17 @@ def main():
         # Don't re-raise the exception to prevent bot from crashing
 
     app.add_error_handler(error_handler)
-
-    # app.add_handler(CommandHandler("start_audit", start_audit))
-    # app.add_handler(CommandHandler("end_audit", end_audit))
     app.add_handler(CommandHandler("hourly_summary_ai", hourly_summary_ai_cmd))
     app.add_handler(CommandHandler("shift_summary_hourly", shift_summary_from_hourly_cmd))
     app.add_handler(CommandHandler("all_shift_summary_hourly", all_shift_summary_from_hourly_cmd))
+    app.add_handler(CommandHandler("shift_summary_hourly_1", shift_summary_hourly_1_cmd))
+    app.add_handler(CommandHandler("shift_summary_hourly_2", shift_summary_hourly_2_cmd))
+    app.add_handler(CommandHandler("shift_summary_hourly_3", shift_summary_hourly_3_cmd))
+    # app.add_handler(CommandHandler("start_audit", start_audit))
+    # app.add_handler(CommandHandler("end_audit", end_audit))
+    # app.add_handler(CommandHandler("hourly_summary_ai", hourly_summary_ai_cmd))
+    # app.add_handler(CommandHandler("shift_summary_hourly", shift_summary_from_hourly_cmd))
+    # app.add_handler(CommandHandler("all_shift_summary_hourly", all_shift_summary_from_hourly_cmd))
     # app.add_handler(CommandHandler("shift_summary_hourly_1", shift_summary_hourly_1_cmd))
     # app.add_handler(CommandHandler("shift_summary_hourly_2", shift_summary_hourly_2_cmd))
     # app.add_handler(CommandHandler("shift_summary_hourly_3", shift_summary_hourly_3_cmd))
